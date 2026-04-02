@@ -385,11 +385,13 @@ class JiraService:
             "hint": INTERNAL_ERROR_RETRY_HINT,
         }
 
-    @staticmethod
-    def _api_error_message(operation: str, exc: JiraApiError) -> str:
+    def _api_error_message(self, operation: str, exc: JiraApiError) -> str:
+        auth_env_names = ("JIRA_BASE_URL", "JIRA_API_TOKEN")
+        if self._settings.jira_auth_type == "basic":
+            auth_env_names = ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN")
         return format_http_service_error(
             service_name="Jira",
             operation=operation,
             status_code=exc.status_code,
-            auth_env_names=("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"),
+            auth_env_names=auth_env_names,
         )

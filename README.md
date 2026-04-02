@@ -55,7 +55,8 @@ Copy `.env.example` to `.env` and fill in the required credentials:
 DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=your_token_here
 DINGTALK_SECRET=SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 JIRA_BASE_URL=https://your-jira-instance.example.com
-JIRA_EMAIL=you@example.com
+JIRA_AUTH_TYPE=bearer
+# JIRA_EMAIL is only required when JIRA_AUTH_TYPE=basic
 JIRA_API_TOKEN=your_jira_api_token_here
 JIRA_PROJECT_KEY=PROJECT1
 ```
@@ -65,7 +66,9 @@ Notes:
 - `DINGTALK_WEBHOOK_URL` is required.
 - `DINGTALK_SECRET` is optional only if the robot does not have "加签" enabled.
 - If "加签" is enabled in DingTalk, `DINGTALK_SECRET` must be set or sends will fail with a signature mismatch error.
-- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, and `JIRA_PROJECT_KEY` are required only when the `jira` integration is enabled.
+- `JIRA_BASE_URL`, `JIRA_API_TOKEN`, and `JIRA_PROJECT_KEY` are required only when the `jira` integration is enabled.
+- `JIRA_AUTH_TYPE` defaults to `bearer`. Set it to `basic` only if your Jira requires `Basic base64(email:token)`.
+- `JIRA_EMAIL` is required only when `JIRA_AUTH_TYPE=basic`.
 - `JIRA_PROJECT_KEY` defines the single Jira project this server is allowed to query and update.
 - Keep real tokens and secrets only in local `.env` or environment variables. Do not commit them.
 

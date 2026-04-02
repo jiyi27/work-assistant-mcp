@@ -16,6 +16,7 @@ def _make_settings(**overrides: object) -> Settings:
         jira_base_url="https://jira.example.invalid",
         jira_email="user@example.invalid",
         jira_api_token="jira-token",
+        jira_auth_type="bearer",
         jira_project_key="IOS",
         log_dir=Path("logs"),
         log_level="info",
@@ -29,6 +30,22 @@ def _make_settings(**overrides: object) -> Settings:
     )
     defaults.update(overrides)
     return Settings(**defaults)  # type: ignore[arg-type]
+
+
+def test_jira_client_uses_bearer_auth_by_default() -> None:
+    from work_assistant_mcp.tools.jira.client import JiraClient
+
+    client = JiraClient(_make_settings(jira_email=None, jira_auth_type="bearer"))
+
+    assert client._auth_header() == "Bearer jira-token"
+
+
+def test_jira_client_supports_basic_auth() -> None:
+    from work_assistant_mcp.tools.jira.client import JiraClient
+
+    client = JiraClient(_make_settings(jira_auth_type="basic"))
+
+    assert client._auth_header().startswith("Basic ")
 
 
 def test_jira_get_latest_assigned_issue_returns_issue_with_attachment_metadata() -> None:
@@ -193,7 +210,7 @@ def test_jira_get_latest_assigned_issue_returns_clean_message_for_auth_failure()
         "error_type": "internal_error",
         "message": (
             "Jira authentication failed while fetching the latest assigned issue (HTTP 401). "
-            "Check JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN."
+            "Check JIRA_BASE_URL and JIRA_API_TOKEN."
         ),
         "hint": (
             "An internal error occurred. Retry up to 2 times; "

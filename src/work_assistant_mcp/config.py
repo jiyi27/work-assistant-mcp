@@ -13,6 +13,7 @@ YAML_CONFIG_FILE = "config.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
 KNOWN_INTEGRATIONS = frozenset({"dingtalk", "jira"})
+JIRA_AUTH_TYPES = frozenset({"bearer", "basic"})
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class Settings:
     jira_base_url: str | None
     jira_email: str | None
     jira_api_token: str | None
+    jira_auth_type: str
     jira_project_key: str | None
     # non-sensitive — loaded from config.yaml (env can override)
     log_dir: Path
@@ -104,7 +106,10 @@ def validate_settings(settings: Settings) -> None:
     if "jira" in settings.enabled_integrations:
         if not settings.jira_base_url:
             errors.append("jira: missing JIRA_BASE_URL in environment or .env")
-        if not settings.jira_email:
+        if settings.jira_auth_type not in JIRA_AUTH_TYPES:
+            valid_types = ", ".join(sorted(JIRA_AUTH_TYPES))
+            errors.append(f"jira: invalid JIRA_AUTH_TYPE. Expected one of: {valid_types}")
+        if settings.jira_auth_type == "basic" and not settings.jira_email:
             errors.append("jira: missing JIRA_EMAIL in environment or .env")
         if not settings.jira_api_token:
             errors.append("jira: missing JIRA_API_TOKEN in environment or .env")
@@ -142,6 +147,7 @@ def get_settings() -> Settings:
     jira_base_url = os.getenv("JIRA_BASE_URL", "").strip() or None
     jira_email = os.getenv("JIRA_EMAIL", "").strip() or None
     jira_api_token = os.getenv("JIRA_API_TOKEN", "").strip() or None
+    jira_auth_type = os.getenv("JIRA_AUTH_TYPE", "").strip().lower() or "bearer"
     jira_project_key = os.getenv("JIRA_PROJECT_KEY", "").strip() or None
 
     # non-sensitive values — env overrides yaml, yaml overrides defaults
@@ -193,6 +199,7 @@ def get_settings() -> Settings:
         jira_base_url=jira_base_url,
         jira_email=jira_email,
         jira_api_token=jira_api_token,
+        jira_auth_type=jira_auth_type,
         jira_project_key=jira_project_key,
         log_dir=Path(log_dir_raw),
         log_level=log_level,
