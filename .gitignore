@@ -16,3 +16,12 @@ htmlcov/
 uv.lock
 .env
 .env.*
+logs/
+*.log
+*.bak
+*.tmp
+*.swp
+*.swo
+*.zip
+*.tar.gz
+*.egg
