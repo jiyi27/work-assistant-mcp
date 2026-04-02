@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from mcp.server.fastmcp import FastMCP
 
 from ..config import Settings
+from ..hints import DINGTALK_INTERNAL_ERROR_HINT, required_param_hint
 from ..logger import configure as configure_logger
 from ..logger import error, info
 
@@ -53,14 +54,14 @@ def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
             return {
                 "success": False,
                 "error_type": "invalid_input",
-                "hint": "`title` must not be empty. Fix the parameter and retry.",
+                "hint": required_param_hint("title"),
             }
         if not markdown:
             error("dingtalk.validation_failed", {"field": "markdown"})
             return {
                 "success": False,
                 "error_type": "invalid_input",
-                "hint": "`markdown` must not be empty. Fix the parameter and retry.",
+                "hint": required_param_hint("markdown"),
             }
 
         configure_logger(log_dir=settings.log_dir, level=settings.log_level)
@@ -97,7 +98,7 @@ def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
                 "success": False,
                 "error_type": "internal_error",
                 "message": f"DingTalk webhook request failed with HTTP {exc.code}: {error_body}",
-                "hint": "An internal error occurred. Stop and tell the user in your reply: the notification could not be sent.",
+                "hint": DINGTALK_INTERNAL_ERROR_HINT,
             }
         except URLError as exc:
             error("dingtalk.network_failed", {"reason": str(exc.reason)}, exc=exc)
@@ -105,7 +106,7 @@ def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
                 "success": False,
                 "error_type": "internal_error",
                 "message": f"Failed to reach DingTalk webhook: {exc.reason}",
-                "hint": "An internal error occurred. Stop and tell the user in your reply: the notification could not be sent.",
+                "hint": DINGTALK_INTERNAL_ERROR_HINT,
             }
 
         result = json.loads(response_body)
@@ -121,7 +122,7 @@ def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
                 "success": False,
                 "error_type": "internal_error",
                 "message": f"DingTalk returned error {result.get('errcode')}: {result.get('errmsg', '')}",
-                "hint": "An internal error occurred. Stop and tell the user in your reply: the notification could not be sent.",
+                "hint": DINGTALK_INTERNAL_ERROR_HINT,
             }
 
         info("dingtalk.sent", {"title": title})

@@ -4,6 +4,13 @@ import base64
 from typing import Any
 
 from ..config import Settings
+from ..hints import (
+    INTERNAL_ERROR_RETRY_HINT,
+    jira_accept_invalid_status_hint,
+    jira_issue_not_found_hint,
+    jira_resolve_invalid_status_hint,
+    required_param_hint,
+)
 from ..logger import error, info, warning
 from .jira_client import JiraApiError, JiraClient
 from .jira_models import JiraIssue
@@ -66,10 +73,7 @@ class JiraService:
             issue_key=issue_key.strip(),
             expected_statuses=TODO_STATUS_NAMES,
             transition_names=self._settings.jira_accept_transitions,
-            invalid_status_hint=(
-                f"{issue_key} is not in a Todo state and cannot be accepted. "
-                "If it is already accepted, call jira_resolve_issue instead."
-            ),
+            invalid_status_hint=jira_accept_invalid_status_hint(issue_key),
             success_topic="jira.accept_issue.succeeded",
             operation_label="accepting",
         )
@@ -81,10 +85,7 @@ class JiraService:
             issue_key=issue_key.strip(),
             expected_statuses=ACCEPTED_STATUS_NAMES,
             transition_names=self._settings.jira_resolve_transitions,
-            invalid_status_hint=(
-                f"{issue_key} is not in an Accepted state and cannot be resolved. "
-                "If it is still in Todo, call jira_accept_issue first."
-            ),
+            invalid_status_hint=jira_resolve_invalid_status_hint(issue_key),
             success_topic="jira.resolve_issue.succeeded",
             operation_label="resolving",
         )
@@ -103,7 +104,7 @@ class JiraService:
             return {
                 "success": False,
                 "error_type": "invalid_input",
-                "hint": "`issue_key` must not be empty. Fix the parameter and retry.",
+                "hint": required_param_hint("issue_key"),
             }
 
         try:
@@ -117,7 +118,7 @@ class JiraService:
             return {
                 "success": False,
                 "error_type": "issue_not_found",
-                "hint": f"Issue {issue_key} was not found. Do not guess the key. Notify the user and stop.",
+                "hint": jira_issue_not_found_hint(issue_key),
             }
 
         if issue.status.lower() not in expected_statuses:
@@ -261,5 +262,5 @@ class JiraService:
             "success": False,
             "error_type": "internal_error",
             "message": message,
-            "hint": "An internal error occurred. Notify the user with the message above and stop.",
+            "hint": INTERNAL_ERROR_RETRY_HINT,
         }
