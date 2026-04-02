@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from work_assistant_mcp.config import Settings
 from work_assistant_mcp.server import create_mcp
+from work_assistant_mcp.tools.jira.client import JiraApiError
 
 
 def _make_settings(**overrides: object) -> Settings:
@@ -172,6 +173,53 @@ def test_jira_get_attachment_image_rejects_unknown_attachment() -> None:
         "hint": (
             "Attachment 10 was not found on IOS-123, or it is not a supported image attachment. "
             "Do not guess another attachment id. Stop and notify the user."
+        ),
+    }
+
+
+def test_jira_get_latest_assigned_issue_returns_clean_message_for_auth_failure() -> None:
+    mcp = create_mcp(_make_settings())
+    with patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
+        side_effect=JiraApiError(
+            "Jira request failed with HTTP 401: authentication failed",
+            status_code=401,
+        ),
+    ):
+        _, structured = asyncio.run(mcp.call_tool("jira_get_latest_assigned_issue", {}))
+
+    assert structured == {
+        "success": False,
+        "error_type": "internal_error",
+        "message": (
+            "Jira authentication failed while fetching the latest assigned issue (HTTP 401). "
+            "Check JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN."
+        ),
+        "hint": (
+            "An internal error occurred. Retry up to 2 times; "
+            "if still failing, stop and notify the user with the message above."
+        ),
+    }
+
+
+def test_jira_get_latest_assigned_issue_returns_generic_message_for_non_auth_http_error() -> None:
+    mcp = create_mcp(_make_settings())
+    with patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
+        side_effect=JiraApiError(
+            "Jira request failed with HTTP 500: internal server error",
+            status_code=500,
+        ),
+    ):
+        _, structured = asyncio.run(mcp.call_tool("jira_get_latest_assigned_issue", {}))
+
+    assert structured == {
+        "success": False,
+        "error_type": "internal_error",
+        "message": "Jira API returned HTTP 500 while fetching the latest assigned issue.",
+        "hint": (
+            "An internal error occurred. Retry up to 2 times; "
+            "if still failing, stop and notify the user with the message above."
         ),
     }
 

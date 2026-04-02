@@ -45,9 +45,7 @@ class JiraService:
             issue = self._get_latest_assigned_issue()
         except JiraApiError as exc:
             error("jira.get_latest_assigned_issue.api_error", {}, exc=exc)
-            return self._internal_error(
-                f"Jira API error while fetching the latest assigned issue: {exc.message}"
-            )
+            return self._internal_error(self._api_error_message("fetching the latest assigned issue", exc))
 
         if issue is None:
             info("jira.get_latest_assigned_issue.not_found", {})
@@ -91,7 +89,7 @@ class JiraService:
             issue = self._get_issue_by_key(issue_key)
         except JiraApiError as exc:
             error("jira.get_attachment_image.lookup_failed", {"issue_key": issue_key}, exc=exc)
-            return self._internal_error(f"Jira API error while looking up {issue_key}: {exc.message}")
+            return self._internal_error(self._api_error_message(f"looking up {issue_key}", exc))
 
         if issue is None:
             warning("jira.get_attachment_image.issue_not_found", {"issue_key": issue_key})
@@ -113,9 +111,7 @@ class JiraService:
             current_user_identifiers = self._client.get_current_user_identifiers()
         except JiraApiError as exc:
             error("jira.get_attachment_image.assignee_check_failed", {"issue_key": issue_key}, exc=exc)
-            return self._internal_error(
-                f"Jira API error while checking assignee for {issue_key}: {exc.message}"
-            )
+            return self._internal_error(self._api_error_message(f"checking assignee for {issue_key}", exc))
 
         if not issue.assignee.identifiers().intersection(current_user_identifiers):
             warning("jira.get_attachment_image.assignee_not_allowed", {"issue_key": issue.key})
@@ -152,7 +148,7 @@ class JiraService:
                 exc=exc,
             )
             return self._internal_error(
-                f"Jira API error while downloading attachment {attachment_id} on {issue_key}: {exc.message}"
+                self._api_error_message(f"downloading attachment {attachment_id} on {issue_key}", exc)
             )
 
         if len(raw) > self._settings.jira_attachment_max_bytes:
@@ -222,7 +218,7 @@ class JiraService:
             issue = self._get_issue_by_key(issue_key)
         except JiraApiError as exc:
             error(success_topic.replace(".succeeded", ".lookup_failed"), {"issue_key": issue_key}, exc=exc)
-            return self._internal_error(f"Jira API error while looking up {issue_key}: {exc.message}")
+            return self._internal_error(self._api_error_message(f"looking up {issue_key}", exc))
 
         if issue is None:
             warning(success_topic.replace(".succeeded", ".issue_not_found"), {"issue_key": issue_key})
@@ -244,9 +240,7 @@ class JiraService:
             current_user_identifiers = self._client.get_current_user_identifiers()
         except JiraApiError as exc:
             error(success_topic.replace(".succeeded", ".assignee_check_failed"), {"issue_key": issue_key}, exc=exc)
-            return self._internal_error(
-                f"Jira API error while checking assignee for {issue_key}: {exc.message}"
-            )
+            return self._internal_error(self._api_error_message(f"checking assignee for {issue_key}", exc))
 
         if not issue.assignee.identifiers().intersection(current_user_identifiers):
             warning(success_topic.replace(".succeeded", ".assignee_not_allowed"), {"issue_key": issue.key})
@@ -271,9 +265,7 @@ class JiraService:
             transitions = self._client.get_transitions(issue_key)
         except JiraApiError as exc:
             error(success_topic.replace(".succeeded", ".transitions_failed"), {"issue_key": issue_key}, exc=exc)
-            return self._internal_error(
-                f"Jira API error while fetching transitions for {issue_key}: {exc.message}"
-            )
+            return self._internal_error(self._api_error_message(f"fetching transitions for {issue_key}", exc))
 
         selected = self._find_transition(transitions, transition_names)
         if selected is None:
@@ -296,9 +288,7 @@ class JiraService:
                 {"issue_key": issue_key, "transition_id": transition_id},
                 exc=exc,
             )
-            return self._internal_error(
-                f"Jira API error while {operation_label} {issue_key}: {exc.message}"
-            )
+            return self._internal_error(self._api_error_message(f"{operation_label} {issue_key}", exc))
 
         info(
             success_topic,
@@ -393,3 +383,16 @@ class JiraService:
             "message": message,
             "hint": INTERNAL_ERROR_RETRY_HINT,
         }
+
+    @staticmethod
+    def _api_error_message(operation: str, exc: JiraApiError) -> str:
+        if exc.status_code == 401:
+            return (
+                f"Jira authentication failed while {operation} (HTTP 401). "
+                "Check JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN."
+            )
+        if exc.status_code == 403:
+            return f"Jira denied permission while {operation} (HTTP 403)."
+        if exc.status_code is not None:
+            return f"Jira API returned HTTP {exc.status_code} while {operation}."
+        return f"Jira API encountered an unknown error while {operation}."
