@@ -57,7 +57,7 @@ DINGTALK_SECRET=SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 JIRA_BASE_URL=https://your-jira-instance.example.com
 JIRA_EMAIL=you@example.com
 JIRA_API_TOKEN=your_jira_api_token_here
-JIRA_PROJECT_KEYS=PROJECT1,PROJECT2
+JIRA_PROJECT_KEY=PROJECT1
 ```
 
 Notes:
@@ -65,8 +65,8 @@ Notes:
 - `DINGTALK_WEBHOOK_URL` is required.
 - `DINGTALK_SECRET` is optional only if the robot does not have "加签" enabled.
 - If "加签" is enabled in DingTalk, `DINGTALK_SECRET` must be set or sends will fail with a signature mismatch error.
-- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, and `JIRA_PROJECT_KEYS` are required only when the `jira` integration is enabled.
-- `JIRA_PROJECT_KEYS` is a comma-separated allowlist of Jira projects this server can query.
+- `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, and `JIRA_PROJECT_KEY` are required only when the `jira` integration is enabled.
+- `JIRA_PROJECT_KEY` defines the single Jira project this server is allowed to query and update.
 - Keep real tokens and secrets only in local `.env` or environment variables. Do not commit them.
 
 ### Environment variable overrides

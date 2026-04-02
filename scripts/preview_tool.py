@@ -6,10 +6,19 @@ import json
 import sys
 from typing import Any
 
-from work_assistant_mcp.server import mcp
+from work_assistant_mcp.config import get_settings
+from work_assistant_mcp.logger import configure as configure_logger
+from work_assistant_mcp.server import create_mcp
+
+
+def _build_mcp():
+    settings = get_settings()
+    configure_logger(log_dir=settings.log_dir, level=settings.log_level)
+    return create_mcp(settings)
 
 
 async def _list_tools() -> None:
+    mcp = _build_mcp()
     tools = await mcp.list_tools()
     payload = [
         {
@@ -24,6 +33,7 @@ async def _list_tools() -> None:
 
 
 async def _describe_tool(name: str) -> None:
+    mcp = _build_mcp()
     tools = await mcp.list_tools()
     for tool in tools:
         if tool.name != name:
@@ -42,6 +52,7 @@ async def _describe_tool(name: str) -> None:
 
 
 async def _call_tool(name: str, arguments: dict[str, Any]) -> None:
+    mcp = _build_mcp()
     content, structured = await mcp.call_tool(name, arguments)
 
     rendered_content = []
