@@ -27,7 +27,6 @@ JIRA_ISSUE_FIELDS = (
     "updated",
 )
 OPEN_STATUS_CLAUSE = "statusCategory != Done"
-BUG_ISSUE_TYPES = frozenset({"bug", "故障"})
 TODO_STATUS_NAMES = frozenset({"todo", "待办", "open", "backlog", "new"})
 ACCEPTED_STATUS_NAMES = frozenset({"已接收", "accepted", "in progress", "进行中"})
 
@@ -37,21 +36,23 @@ class JiraService:
         self._settings = settings
         self._client = JiraClient(settings)
 
-    def get_current_fault(self) -> dict[str, Any]:
-        info("jira.get_current_fault.started", {})
+    def get_latest_assigned_issue(self) -> dict[str, Any]:
+        info("jira.get_latest_assigned_issue.started", {})
         try:
-            issue = self._find_latest_assigned_fault()
+            issue = self._get_latest_assigned_issue()
         except JiraApiError as exc:
-            error("jira.get_current_fault.api_error", {}, exc=exc)
-            return self._internal_error(f"Jira API error while fetching the current fault: {exc.message}")
+            error("jira.get_latest_assigned_issue.api_error", {}, exc=exc)
+            return self._internal_error(
+                f"Jira API error while fetching the latest assigned issue: {exc.message}"
+            )
 
         if issue is None:
-            info("jira.get_current_fault.not_found", {})
+            info("jira.get_latest_assigned_issue.not_found", {})
             return {"found": False}
 
         attachments = self._serialize_attachments(issue)
         info(
-            "jira.get_current_fault.succeeded",
+            "jira.get_latest_assigned_issue.succeeded",
             {"issue_key": issue.key, "attachment_count": len(attachments)},
         )
         return {
@@ -180,17 +181,15 @@ class JiraService:
         )
         return {"success": True, "issue_key": issue_key}
 
-    def _find_latest_assigned_fault(self) -> JiraIssue | None:
+    def _get_latest_assigned_issue(self) -> JiraIssue | None:
         issues = self._client.search_issues(
-            jql=self._build_assigned_fault_jql(),
+            jql=self._build_latest_assigned_issue_jql(),
             fields=JIRA_ISSUE_FIELDS,
-            max_results=10,
+            max_results=1,
         )
-        parsed = [JiraIssue.from_api(item) for item in issues]
-        bug_issues = [item for item in parsed if item.issue_type.strip().lower() in BUG_ISSUE_TYPES]
-        if not bug_issues:
+        if not issues:
             return None
-        return bug_issues[0]
+        return JiraIssue.from_api(issues[0])
 
     def _get_issue_by_key(self, issue_key: str) -> JiraIssue | None:
         issues = self._client.search_issues(
@@ -202,7 +201,7 @@ class JiraService:
             return None
         return JiraIssue.from_api(issues[0])
 
-    def _build_assigned_fault_jql(self) -> str:
+    def _build_latest_assigned_issue_jql(self) -> str:
         if not self._settings.jira_project_key:
             raise RuntimeError(
                 "Missing JIRA_PROJECT_KEY in environment or .env. Configure one Jira project key."
@@ -236,7 +235,7 @@ class JiraService:
                 raw = self._client.download_attachment(content_url)
             except JiraApiError as exc:
                 warning(
-                    "jira.get_current_fault.attachment_failed",
+                    "jira.get_latest_assigned_issue.attachment_failed",
                     {"issue_key": issue.key, "filename": attachment.get("filename", "")},
                     exc=exc,
                 )
@@ -244,7 +243,7 @@ class JiraService:
 
             if len(raw) > self._settings.jira_attachment_max_bytes:
                 warning(
-                    "jira.get_current_fault.attachment_too_large",
+                    "jira.get_latest_assigned_issue.attachment_too_large",
                     {
                         "issue_key": issue.key,
                         "filename": attachment.get("filename", ""),

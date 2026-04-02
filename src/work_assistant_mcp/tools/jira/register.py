@@ -12,9 +12,9 @@ def register_jira_tools(mcp: FastMCP, settings: Settings) -> None:
     service = JiraService(settings)
 
     @mcp.tool()
-    def jira_get_current_fault() -> dict[str, Any]:
-        """Fetch the most recently updated open fault assigned to the current user, including image attachments encoded as base64."""
-        return service.get_current_fault()
+    def jira_get_latest_assigned_issue() -> dict[str, Any]:
+        """Fetch the most recently updated open issue assigned to the current user, including image attachments encoded as base64."""
+        return service.get_latest_assigned_issue()
 
     @mcp.tool()
     def jira_accept_issue(issue_key: str) -> dict[str, Any]:

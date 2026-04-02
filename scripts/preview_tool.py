@@ -67,8 +67,6 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> None:
     print(
         json.dumps(
             {
-                "tool": name,
-                "arguments": arguments,
                 "content": rendered_content,
                 "structured": structured,
             },

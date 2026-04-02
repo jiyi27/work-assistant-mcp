@@ -31,7 +31,7 @@ def _make_settings(**overrides: object) -> Settings:
     return Settings(**defaults)  # type: ignore[arg-type]
 
 
-def test_jira_get_current_fault_returns_issue_with_base64_attachment() -> None:
+def test_jira_get_latest_assigned_issue_returns_issue_with_base64_attachment() -> None:
     search_results = [
         {
             "key": "IOS-123",
@@ -60,7 +60,7 @@ def test_jira_get_current_fault_returns_issue_with_base64_attachment() -> None:
         "work_assistant_mcp.tools.jira.client.JiraClient.download_attachment",
         return_value=b"png-bytes",
     ):
-        _, structured = asyncio.run(mcp.call_tool("jira_get_current_fault", {}))
+        _, structured = asyncio.run(mcp.call_tool("jira_get_latest_assigned_issue", {}))
 
     assert structured == {
         "found": True,
