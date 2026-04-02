@@ -7,11 +7,14 @@ from pathlib import Path
 
 ENV_FILE_NAME = ".env"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
 
 
 @dataclass(frozen=True)
 class Settings:
     dingtalk_webhook_url: str
+    log_dir: Path
+    log_level: str
 
 
 def load_env_file(env_path: Path | None = None) -> None:
@@ -47,4 +50,17 @@ def get_settings() -> Settings:
             "Missing DINGTALK_WEBHOOK_URL. Configure it in the environment or .env."
         )
 
-    return Settings(dingtalk_webhook_url=webhook_url)
+    log_dir_raw = os.getenv("WORK_ASSISTANT_LOG_DIR", "logs").strip() or "logs"
+    log_level = os.getenv("WORK_ASSISTANT_LOG_LEVEL", "info").strip().lower() or "info"
+    if log_level not in LOG_LEVELS:
+        valid_levels = ", ".join(sorted(LOG_LEVELS))
+        raise RuntimeError(
+            "Invalid WORK_ASSISTANT_LOG_LEVEL. "
+            f"Expected one of: {valid_levels}."
+        )
+
+    return Settings(
+        dingtalk_webhook_url=webhook_url,
+        log_dir=Path(log_dir_raw),
+        log_level=log_level,
+    )
