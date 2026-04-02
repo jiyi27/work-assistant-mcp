@@ -1,0 +1,11 @@
+server:
+  name: work-assistant-mcp
+  instructions: "A work-focused MCP server with notification tools for local agents."
+
+logging:
+  dir: logs
+  level: info
+
+tools:
+  enabled:
+    - dingtalk
