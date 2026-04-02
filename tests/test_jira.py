@@ -14,9 +14,7 @@ def _make_settings(**overrides: object) -> Settings:
         dingtalk_webhook_url="https://example.invalid/webhook",
         dingtalk_secret=None,
         jira_base_url="https://jira.example.invalid",
-        jira_email="user@example.invalid",
         jira_api_token="jira-token",
-        jira_auth_type="bearer",
         jira_project_key="IOS",
         log_dir=Path("logs"),
         log_level="info",
@@ -35,17 +33,9 @@ def _make_settings(**overrides: object) -> Settings:
 def test_jira_client_uses_bearer_auth_by_default() -> None:
     from work_assistant_mcp.tools.jira.client import JiraClient
 
-    client = JiraClient(_make_settings(jira_email=None, jira_auth_type="bearer"))
+    client = JiraClient(_make_settings())
 
     assert client._auth_header() == "Bearer jira-token"
-
-
-def test_jira_client_supports_basic_auth() -> None:
-    from work_assistant_mcp.tools.jira.client import JiraClient
-
-    client = JiraClient(_make_settings(jira_auth_type="basic"))
-
-    assert client._auth_header().startswith("Basic ")
 
 
 def test_jira_get_latest_assigned_issue_returns_issue_with_attachment_metadata() -> None:

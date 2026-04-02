@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from typing import Any
 
 from ...config import Settings
@@ -23,9 +22,7 @@ class JiraClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._base_url = self._require(settings.jira_base_url, "JIRA_BASE_URL")
-        self._email = settings.jira_email
         self._api_token = self._require(settings.jira_api_token, "JIRA_API_TOKEN")
-        self._auth_type = settings.jira_auth_type
         self._current_user_identifiers: frozenset[str] | None = None
 
     @staticmethod
@@ -35,11 +32,7 @@ class JiraClient:
         raise RuntimeError(f"Missing {env_name}. Configure it in the environment or .env.")
 
     def _auth_header(self) -> str:
-        if self._auth_type == "bearer":
-            return f"Bearer {self._api_token}"
-        email = self._require(self._email, "JIRA_EMAIL")
-        raw = f"{email}:{self._api_token}".encode("utf-8")
-        return f"Basic {base64.b64encode(raw).decode('ascii')}"
+        return f"Bearer {self._api_token}"
 
     def _request(
         self,
