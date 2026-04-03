@@ -7,7 +7,7 @@ Tools are grouped by integration. Each integration is enabled or disabled as a u
 | Integration | Tools                                                               |
 | ----------- | ------------------------------------------------------------------- |
 | `dingtalk`  | `dingtalk_send_markdown`                                            |
-| `jira`      | `jira_get_latest_assigned_issue`, `jira_get_attachment_image`, `jira_accept_issue`, `jira_resolve_issue` |
+| `jira`      | `jira_get_latest_assigned_issue`, `jira_get_attachment_image`, `jira_start_issue`, `jira_resolve_issue` |
 
 ## Configuration
 
@@ -33,19 +33,20 @@ integrations:
     # comment out any line to disable that integration at startup
 
 jira:
-  accept_transitions:
+  latest_assigned_statuses:
+    - 待处理
     - 已接收
-    - Accept
-  resolve_transitions:
-    - 已解决
-    - Resolved
+    - 处理中
+  start_target_status: 已接收
+  resolve_target_status: 已解决
   attachments:
     max_images: 5
     max_bytes_per_image: 1048576
 ```
 
 To disable an integration (and all its tools) without removing it from the codebase, comment out its name in `integrations.enabled`.
-When `jira` is enabled, `jira.accept_transitions` and `jira.resolve_transitions` must be configured explicitly.
+When `jira` is enabled, `jira.latest_assigned_statuses`, `jira.start_target_status`, and `jira.resolve_target_status` must be configured explicitly.
+These values are Jira status names, not Jira status categories.
 
 ### `.env` — sensitive credentials
 
@@ -142,3 +143,57 @@ Run smoke tests:
 ```bash
 uv run pytest
 ```
+
+Inspect one Jira issue's current status and available workflow transitions:
+
+```bash
+uv run python scripts/inspect_jira_issue_workflow.py IOS-123
+```
+
+This single command prints:
+
+- all visible Jira `statusCategory` values
+- all visible Jira `status` values
+- the issue's current status
+- every transition currently available for that issue
+
+## Jira Configuration Workflow
+
+Use this flow when configuring Jira tools for a new project or workflow:
+
+1. Inspect one representative issue:
+
+```bash
+uv run python scripts/inspect_jira_issue_workflow.py IOS-123
+```
+
+2. Read the output fields:
+- `statuses`: all visible Jira status names and their `statusCategory`
+- `available_target_statuses`: statuses the current issue can move to right now
+- `available_transitions`: transition names plus each transition's target status
+
+3. Fill `config.yaml`:
+
+```yaml
+jira:
+  latest_assigned_statuses:
+    - 待处理
+    - 已接收
+    - 处理中
+  start_target_status: 已接收
+  resolve_target_status: 已解决
+```
+
+Guidance:
+
+- `jira.latest_assigned_statuses` controls which issues `jira_get_latest_assigned_issue` is allowed to return.
+- Put only concrete status names in `jira.latest_assigned_statuses`, such as `待处理` or `处理中`.
+- Do not put status categories such as `Done` or `In Progress` into `jira.latest_assigned_statuses`.
+- Set `jira.start_target_status` to one target status name that appears in `available_target_statuses` for issues you want to start.
+- Set `jira.resolve_target_status` to one target status name that appears in `available_target_statuses` for issues you want to resolve.
+- If Jira reports multiple transitions reaching the same target status, the tool stops with a structured `transition_ambiguous` error so you can adjust the workflow or rename statuses.
+
+Behavior summary:
+
+- `jira_get_latest_assigned_issue` queries only the configured project, only issues assigned to the current Jira user, and only issues whose current status is listed in `jira.latest_assigned_statuses`.
+- `jira_start_issue` and `jira_resolve_issue` do not match `statusCategory`; they match the transition destination status name exactly.

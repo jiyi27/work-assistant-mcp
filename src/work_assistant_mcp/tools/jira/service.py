@@ -29,7 +29,6 @@ JIRA_ISSUE_FIELDS = (
     "attachment",
     "updated",
 )
-OPEN_STATUS_CLAUSE = "statusCategory != Done"
 
 
 class JiraService:
@@ -328,23 +327,25 @@ class JiraService:
         return JiraIssue.from_api(issues[0])
 
     def _get_issue_by_key(self, issue_key: str) -> JiraIssue | None:
-        issues = self._client.search_issues(
-            jql=f'key = "{issue_key}"',
-            fields=JIRA_ISSUE_FIELDS,
-            max_results=1,
-        )
-        if not issues:
+        issue = self._client.get_issue(issue_key, fields=JIRA_ISSUE_FIELDS)
+        if issue is None:
             return None
-        return JiraIssue.from_api(issues[0])
+        return JiraIssue.from_api(issue)
 
     def _build_latest_assigned_issue_jql(self) -> str:
         if not self._settings.jira_project_key:
             raise RuntimeError(
                 "Missing JIRA_PROJECT_KEY in environment or .env. Configure one Jira project key."
             )
+        statuses = self._settings.jira_latest_assigned_statuses
+        if not statuses:
+            raise RuntimeError(
+                "Missing jira.latest_assigned_statuses in config.yaml. Configure at least one Jira status."
+            )
+        statuses_clause = ", ".join(self._quote_jql_string(value) for value in statuses)
         return (
             f'project = "{self._settings.jira_project_key}" AND assignee = currentUser() '
-            f"AND {OPEN_STATUS_CLAUSE} ORDER BY updated DESC"
+            f"AND status in ({statuses_clause}) ORDER BY updated DESC"
         )
 
     def _is_allowed_project(self, issue_key: str) -> bool:
@@ -373,6 +374,11 @@ class JiraService:
             if len(results) >= self._settings.jira_attachment_max_images:
                 break
         return results
+
+    @staticmethod
+    def _quote_jql_string(value: str) -> str:
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
 
     @staticmethod
     def _find_image_attachment(issue: JiraIssue, attachment_id: str) -> dict[str, Any] | None:

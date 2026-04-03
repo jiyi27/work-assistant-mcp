@@ -12,6 +12,11 @@ integrations:
     - jira
 
 jira:
+  # Only these statuses are eligible for jira_get_latest_assigned_issue.
+  # Run `uv run python scripts/inspect_jira_issue_workflow.py IOS-123` first to inspect visible Jira statuses.
+  latest_assigned_statuses:
+    - 重新打开
+    - ToDo
   # Target Jira status for jira_start_issue.
   # The server selects the currently available transition whose destination status matches this value.
   start_target_status: 已接收

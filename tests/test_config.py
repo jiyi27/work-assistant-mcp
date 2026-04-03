@@ -15,6 +15,9 @@ integrations:
   enabled:
     - jira
 jira:
+  latest_assigned_statuses:
+    - 待处理
+    - 已接收
   start_target_status: 已接收
   resolve_target_status: 已解决
 """.strip(),
@@ -56,6 +59,9 @@ integrations:
   enabled:
     - jira
 jira:
+  latest_assigned_statuses:
+    - 待处理
+    - 已接收
   start_target_status: 已接收
   resolve_target_status: 已解决
 """.strip(),
@@ -81,6 +87,9 @@ tools:
   enabled:
     - jira
 jira:
+  latest_assigned_statuses:
+    - 待处理
+    - 已接收
   start_target_status: 已接收
   resolve_target_status: 已解决
 """.strip(),
@@ -105,3 +114,38 @@ jira:
     settings = config_module.get_settings()
 
     assert settings.enabled_integrations == ("jira",)
+
+
+def test_get_settings_requires_latest_assigned_statuses_when_jira_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+integrations:
+  enabled:
+    - jira
+jira:
+  start_target_status: 已接收
+  resolve_target_status: 已解决
+""".strip(),
+        encoding="utf-8",
+    )
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "JIRA_BASE_URL=https://jira.example.invalid",
+                "JIRA_API_TOKEN=secret-token",
+                "JIRA_PROJECT_KEY=IOS",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("JIRA_BASE_URL", raising=False)
+    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    with pytest.raises(RuntimeError, match="missing jira.latest_assigned_statuses"):
+        config_module.get_settings()

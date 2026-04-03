@@ -74,6 +74,21 @@ class JiraClient:
             raise JiraApiError("Jira search response did not contain an issues list.")
         return [item for item in issues if isinstance(item, dict)]
 
+    def get_issue(self, issue_key: str, *, fields: tuple[str, ...]) -> dict[str, Any] | None:
+        try:
+            payload = self._request(
+                method="GET",
+                path=f"/rest/api/2/issue/{issue_key}",
+                query={"fields": ",".join(fields)},
+            )
+        except JiraApiError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        if not isinstance(payload, dict):
+            raise JiraApiError("Jira issue response did not contain an issue object.")
+        return payload
+
     def get_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         payload = self._request(
             method="GET",
@@ -83,6 +98,24 @@ class JiraClient:
         if not isinstance(transitions, list):
             raise JiraApiError("Jira transitions response did not contain a transitions list.")
         return [item for item in transitions if isinstance(item, dict)]
+
+    def get_statuses(self) -> list[dict[str, Any]]:
+        payload = self._request(
+            method="GET",
+            path="/rest/api/2/status",
+        )
+        if not isinstance(payload, list):
+            raise JiraApiError("Jira status response did not contain a status list.")
+        return [item for item in payload if isinstance(item, dict)]
+
+    def get_status_categories(self) -> list[dict[str, Any]]:
+        payload = self._request(
+            method="GET",
+            path="/rest/api/2/statuscategory",
+        )
+        if not isinstance(payload, list):
+            raise JiraApiError("Jira status category response did not contain a status category list.")
+        return [item for item in payload if isinstance(item, dict)]
 
     def transition_issue(self, issue_key: str, transition_id: str) -> None:
         self._request(

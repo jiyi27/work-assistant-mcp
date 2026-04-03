@@ -29,6 +29,7 @@ class Settings:
     server_name: str
     server_instructions: str
     enabled_integrations: tuple[str, ...]
+    jira_latest_assigned_statuses: tuple[str, ...]
     jira_start_target_status: str
     jira_resolve_target_status: str
     jira_attachment_max_images: int
@@ -92,6 +93,13 @@ def _read_enabled_integrations(yaml_cfg: dict[str, Any]) -> tuple[str, ...]:
     return enabled
 
 
+def _read_string_list(section: dict[str, Any], key: str) -> tuple[str, ...]:
+    raw_value = section.get(key, [])
+    if not isinstance(raw_value, list):
+        raise RuntimeError(f"Invalid jira.{key} in config.yaml. Expected a list.")
+    return tuple(str(item).strip() for item in raw_value if str(item).strip())
+
+
 def validate_settings(settings: Settings) -> None:
     errors: list[str] = []
 
@@ -107,6 +115,10 @@ def validate_settings(settings: Settings) -> None:
             errors.append("jira: missing JIRA_API_TOKEN in environment or .env")
         if not settings.jira_project_key:
             errors.append("jira: missing JIRA_PROJECT_KEY in environment or .env")
+        if not settings.jira_latest_assigned_statuses:
+            errors.append(
+                "jira: missing jira.latest_assigned_statuses in config.yaml"
+            )
         if not settings.jira_start_target_status:
             errors.append(
                 "jira: missing jira.start_target_status in config.yaml"
@@ -162,7 +174,12 @@ def get_settings() -> Settings:
     server_instructions = yaml_server.get("instructions", "")
 
     yaml_jira = yaml_cfg.get("jira", {})
+    if not isinstance(yaml_jira, dict):
+        raise RuntimeError("Invalid jira section in config.yaml. Expected a mapping.")
 
+    jira_latest_assigned_statuses = _read_string_list(
+        yaml_jira, "latest_assigned_statuses"
+    )
     jira_start_target_status = str(yaml_jira.get("start_target_status", "")).strip()
     jira_resolve_target_status = str(yaml_jira.get("resolve_target_status", "")).strip()
 
@@ -187,6 +204,7 @@ def get_settings() -> Settings:
         server_name=server_name,
         server_instructions=server_instructions,
         enabled_integrations=enabled_integrations,
+        jira_latest_assigned_statuses=jira_latest_assigned_statuses,
         jira_start_target_status=jira_start_target_status,
         jira_resolve_target_status=jira_resolve_target_status,
         jira_attachment_max_images=jira_attachment_max_images,

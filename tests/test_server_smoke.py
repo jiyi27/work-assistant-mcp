@@ -26,6 +26,7 @@ def _make_settings(**overrides: object) -> Settings:
         server_name="work-assistant-mcp",
         server_instructions="",
         enabled_integrations=("dingtalk",),
+        jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",
         jira_resolve_target_status="已解决",
         jira_attachment_max_images=5,

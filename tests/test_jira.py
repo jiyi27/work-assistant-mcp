@@ -23,6 +23,7 @@ def _make_settings(**overrides: object) -> Settings:
         server_name="work-assistant-mcp",
         server_instructions="",
         enabled_integrations=("jira",),
+        jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",
         jira_resolve_target_status="已解决",
         jira_attachment_max_images=5,
@@ -91,34 +92,58 @@ def test_jira_get_latest_assigned_issue_returns_issue_with_attachment_metadata()
     }
 
 
-def test_jira_get_attachment_image_returns_single_attachment_content() -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "Todo"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-                "attachment": [
-                    {
-                        "id": "10",
-                        "filename": "crash.png",
-                        "mimeType": "image/png",
-                        "size": 123,
-                        "content": "https://jira.example.invalid/attachment/1",
-                    }
-                ],
-            },
-        }
-    ]
-    mcp = create_mcp(_make_settings())
+def test_jira_get_latest_assigned_issue_uses_configured_status_list_in_jql() -> None:
+    service_settings = _make_settings(jira_project_key="IOS", jira_latest_assigned_statuses=("待处理", "已接收"))
+    mcp = create_mcp(service_settings)
     with patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        return_value=[],
+    ) as search_mock:
+        _, structured = asyncio.run(mcp.call_tool("jira_get_latest_assigned_issue", {}))
+
+    assert structured == {"found": False}
+    search_mock.assert_called_once_with(
+        jql='project = "IOS" AND assignee = currentUser() AND status in ("待处理", "已接收") ORDER BY updated DESC',
+        fields=(
+            "summary",
+            "description",
+            "status",
+            "priority",
+            "issuetype",
+            "assignee",
+            "attachment",
+            "updated",
+        ),
+        max_results=1,
+    )
+
+
+def test_jira_get_attachment_image_returns_single_attachment_content() -> None:
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "Todo"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+            "attachment": [
+                {
+                    "id": "10",
+                    "filename": "crash.png",
+                    "mimeType": "image/png",
+                    "size": 123,
+                    "content": "https://jira.example.invalid/attachment/1",
+                }
+            ],
+        },
+    }
+    mcp = create_mcp(_make_settings())
+    with patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -146,34 +171,32 @@ def test_jira_get_attachment_image_returns_single_attachment_content() -> None:
 
 
 def test_jira_get_attachment_image_log_truncates_large_base64(tmp_path: Path) -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "Todo"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-                "attachment": [
-                    {
-                        "id": "10",
-                        "filename": "crash.png",
-                        "mimeType": "image/png",
-                        "size": 123,
-                        "content": "https://jira.example.invalid/attachment/1",
-                    }
-                ],
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "Todo"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+            "attachment": [
+                {
+                    "id": "10",
+                    "filename": "crash.png",
+                    "mimeType": "image/png",
+                    "size": 123,
+                    "content": "https://jira.example.invalid/attachment/1",
+                }
+            ],
+        },
+    }
     logger.configure(log_dir=tmp_path, level="info")
     mcp = create_mcp(_make_settings(log_dir=tmp_path))
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -203,25 +226,23 @@ def test_jira_get_attachment_image_log_truncates_large_base64(tmp_path: Path) ->
 
 
 def test_jira_get_attachment_image_rejects_unknown_attachment() -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "Todo"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-                "attachment": [],
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "Todo"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+            "attachment": [],
+        },
+    }
     mcp = create_mcp(_make_settings())
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -291,24 +312,22 @@ def test_jira_get_latest_assigned_issue_returns_generic_message_for_non_auth_htt
 
 
 def test_jira_start_issue_returns_transition_not_available_with_current_context() -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "In Progress"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "In Progress"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
     mcp = create_mcp(_make_settings())
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -338,24 +357,22 @@ def test_jira_start_issue_returns_transition_not_available_with_current_context(
 
 
 def test_jira_start_issue_transitions_by_target_status() -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "Todo"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "Todo"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
     mcp = create_mcp(_make_settings())
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -378,24 +395,22 @@ def test_jira_start_issue_transitions_by_target_status() -> None:
 
 
 def test_jira_resolve_issue_transitions_successfully() -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "已接收"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "已接收"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
     mcp = create_mcp(_make_settings())
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -415,24 +430,22 @@ def test_jira_resolve_issue_transitions_successfully() -> None:
 
 
 def test_jira_resolve_issue_rejects_ambiguous_target_status() -> None:
-    search_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "已接收"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "已接收"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
     mcp = create_mcp(_make_settings())
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
@@ -463,24 +476,22 @@ def test_jira_resolve_issue_rejects_ambiguous_target_status() -> None:
 
 
 def test_jira_start_issue_rejects_write_outside_configured_project() -> None:
-    search_results = [
-        {
-            "key": "ANDROID-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "Todo"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "user@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "ANDROID-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "Todo"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
     mcp = create_mcp(_make_settings(jira_project_key="IOS"))
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=search_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ):
         _, structured = asyncio.run(
             mcp.call_tool("jira_start_issue", {"issue_key": "ANDROID-123"})
@@ -497,24 +508,22 @@ def test_jira_start_issue_rejects_write_outside_configured_project() -> None:
 
 
 def test_jira_start_issue_rejects_issue_not_assigned_to_current_user() -> None:
-    lookup_results = [
-        {
-            "key": "IOS-123",
-            "fields": {
-                "summary": "Crash on launch",
-                "description": "Steps to reproduce",
-                "status": {"name": "Todo"},
-                "priority": {"name": "High"},
-                "issuetype": {"name": "故障"},
-                "assignee": {"emailAddress": "someone-else@example.invalid"},
-                "updated": "2026-04-02T10:00:00.000+0800",
-            },
-        }
-    ]
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "Todo"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "someone-else@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
     mcp = create_mcp(_make_settings())
     with patch(
-        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
-        return_value=lookup_results,
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
