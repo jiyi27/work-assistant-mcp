@@ -19,7 +19,7 @@ jira:
     - ToDo
   # Target Jira status for jira_start_issue.
   # The server selects the currently available transition whose destination status matches this value.
-  start_target_status: 已接收
+  start_target_status: 已接受
   # Target Jira status for jira_resolve_issue.
   # The server selects the currently available transition whose destination status matches this value.
   resolve_target_status: 已解决

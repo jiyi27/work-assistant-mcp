@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .config import Settings
+
 
 INTERNAL_ERROR_RETRY_HINT = (
     "An internal error occurred. Retry up to 2 times; "
@@ -15,37 +17,53 @@ def required_param_hint(param_name: str) -> str:
     return f"`{param_name}` must not be empty. Fix the parameter and retry."
 
 
-def jira_issue_not_found_hint(issue_key: str) -> str:
+def notify_user_instruction(settings: Settings) -> str:
+    if "dingtalk" in settings.enabled_integrations:
+        return "use dingtalk_send_markdown to notify the user"
+    return "tell the user in your reply"
+
+
+def jira_issue_not_found_hint(settings: Settings, issue_key: str) -> str:
     return (
         f"Issue {issue_key} was not found. "
         "Only retry with a different key if you are certain you used the wrong one; "
-        "do not guess. Otherwise stop and notify the user."
+        f"do not guess. Otherwise stop and {notify_user_instruction(settings)}."
     )
 
 
-JIRA_TRANSITION_FAILURE_HINT = (
-    "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
-    "and notify the user with the current status, target status, and available target statuses."
-)
+def jira_investigate_issue_hint(settings: Settings) -> str:
+    return (
+        "If you cannot determine the root cause or the issue appears to already be resolved, "
+        f"stop processing, summarize your findings, and {notify_user_instruction(settings)}."
+    )
 
 
-def jira_project_not_allowed_hint(issue_key: str) -> str:
+def jira_transition_failure_hint(settings: Settings) -> str:
+    return (
+        "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
+        f"and {notify_user_instruction(settings)} with the current status, target status, and available target statuses."
+    )
+
+
+def jira_project_not_allowed_hint(settings: Settings, issue_key: str) -> str:
     return (
         f"{issue_key} is outside the configured Jira project scope. "
-        "Do not retry this write operation. Stop and notify the user."
+        f"Do not retry this write operation. Stop and {notify_user_instruction(settings)}."
     )
 
 
-def jira_assignee_not_allowed_hint(issue_key: str) -> str:
+def jira_assignee_not_allowed_hint(settings: Settings, issue_key: str) -> str:
     return (
         f"{issue_key} is not currently assigned to you. "
         "Do not retry this write operation unless the issue is reassigned to you. "
-        "Stop and notify the user."
+        f"Stop and {notify_user_instruction(settings)}."
     )
 
 
-def jira_attachment_not_found_hint(issue_key: str, attachment_id: str) -> str:
+def jira_attachment_not_found_hint(
+    settings: Settings, issue_key: str, attachment_id: str
+) -> str:
     return (
         f"Attachment {attachment_id} was not found on {issue_key}, or it is not a supported image attachment. "
-        "Do not guess another attachment id. Stop and notify the user."
+        f"Do not guess another attachment id. Stop and {notify_user_instruction(settings)}."
     )

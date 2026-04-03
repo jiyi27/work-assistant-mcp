@@ -89,6 +89,10 @@ def test_jira_get_latest_assigned_issue_returns_issue_with_attachment_metadata()
                 "size_bytes": 123,
             }
         ],
+        "hint": (
+            "If you cannot determine the root cause or the issue appears to already be resolved, "
+            "stop processing, summarize your findings, and tell the user in your reply."
+        ),
     }
 
 
@@ -259,7 +263,7 @@ def test_jira_get_attachment_image_rejects_unknown_attachment() -> None:
         "error_type": "attachment_not_found",
         "hint": (
             "Attachment 10 was not found on IOS-123, or it is not a supported image attachment. "
-            "Do not guess another attachment id. Stop and notify the user."
+            "Do not guess another attachment id. Stop and tell the user in your reply."
         ),
     }
 
@@ -351,7 +355,7 @@ def test_jira_start_issue_returns_transition_not_available_with_current_context(
         "available_statuses": ["已解决", "Closed"],
         "hint": (
             "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
-            "and notify the user with the current status, target status, and available target statuses."
+            "and tell the user in your reply with the current status, target status, and available target statuses."
         ),
     }
 
@@ -470,7 +474,7 @@ def test_jira_resolve_issue_rejects_ambiguous_target_status() -> None:
         "matching_transition_names": ["Resolve", "Fast Resolve"],
         "hint": (
             "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
-            "and notify the user with the current status, target status, and available target statuses."
+            "and tell the user in your reply with the current status, target status, and available target statuses."
         ),
     }
 
@@ -502,9 +506,44 @@ def test_jira_start_issue_rejects_write_outside_configured_project() -> None:
         "error_type": "project_not_allowed",
         "hint": (
             "ANDROID-123 is outside the configured Jira project scope. "
-            "Do not retry this write operation. Stop and notify the user."
+            "Do not retry this write operation. Stop and tell the user in your reply."
         ),
     }
+
+
+def test_jira_hints_use_dingtalk_notification_when_enabled() -> None:
+    issue_payload = {
+        "key": "IOS-123",
+        "fields": {
+            "summary": "Crash on launch",
+            "description": "Steps to reproduce",
+            "status": {"name": "In Progress"},
+            "priority": {"name": "High"},
+            "issuetype": {"name": "故障"},
+            "assignee": {"emailAddress": "user@example.invalid"},
+            "updated": "2026-04-02T10:00:00.000+0800",
+        },
+    }
+    mcp = create_mcp(_make_settings(enabled_integrations=("jira", "dingtalk")))
+    with patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_issue",
+        return_value=issue_payload,
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
+        return_value=frozenset({"user@example.invalid"}),
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_transitions",
+        return_value=[],
+    ):
+        _, structured = asyncio.run(
+            mcp.call_tool("jira_start_issue", {"issue_key": "IOS-123"})
+        )
+
+    assert structured["hint"] == (
+        "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
+        "and use dingtalk_send_markdown to notify the user with the current status, target status, "
+        "and available target statuses."
+    )
 
 
 def test_jira_start_issue_rejects_issue_not_assigned_to_current_user() -> None:
@@ -538,6 +577,6 @@ def test_jira_start_issue_rejects_issue_not_assigned_to_current_user() -> None:
         "hint": (
             "IOS-123 is not currently assigned to you. "
             "Do not retry this write operation unless the issue is reassigned to you. "
-            "Stop and notify the user."
+            "Stop and tell the user in your reply."
         ),
     }
