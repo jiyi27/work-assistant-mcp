@@ -23,19 +23,19 @@ def jira_issue_not_found_hint(issue_key: str) -> str:
     )
 
 
-def jira_accept_invalid_status_hint(issue_key: str) -> str:
+def jira_start_invalid_status_hint(issue_key: str) -> str:
     return (
-        f"{issue_key} is not in a Todo state and cannot be accepted. "
-        "If it is already in an Accepted state, use the resolve tool instead. "
+        f"{issue_key} is not in a ready-for-work state and cannot be started. "
+        "If it is already in an active-work state, use the resolve tool instead. "
         "If still failing, stop and notify the user."
     )
 
 
 def jira_resolve_invalid_status_hint(issue_key: str) -> str:
     return (
-        f"{issue_key} is not in an Accepted state and cannot be resolved. "
-        "If it is still in Todo, check whether any available tool can first "
-        "move it to an Accepted state, then retry. "
+        f"{issue_key} is not in an active-work state and cannot be resolved. "
+        "If it is still in a ready-for-work state, check whether any available tool can first "
+        "move it into an active-work state, then retry. "
         "If still failing, stop and notify the user."
     )
 

@@ -7,7 +7,7 @@ from ...config import Settings
 from ...error_messages import format_http_service_error
 from ...hints import (
     INTERNAL_ERROR_RETRY_HINT,
-    jira_accept_invalid_status_hint,
+    jira_start_invalid_status_hint,
     jira_assignee_not_allowed_hint,
     jira_attachment_not_found_hint,
     jira_issue_not_found_hint,
@@ -31,8 +31,8 @@ JIRA_ISSUE_FIELDS = (
     "updated",
 )
 OPEN_STATUS_CLAUSE = "statusCategory != Done"
-TODO_STATUS_NAMES = frozenset({"todo", "待办", "open", "backlog", "new"})
-ACCEPTED_STATUS_NAMES = frozenset({"已接收", "accepted", "in progress", "进行中"})
+READY_FOR_WORK_STATUS_NAMES = frozenset({"todo", "待办", "open", "backlog", "new"})
+ACTIVE_WORK_STATUS_NAMES = frozenset({"已接收", "accepted", "in progress", "进行中"})
 
 
 class JiraService:
@@ -174,16 +174,16 @@ class JiraService:
             },
         }
 
-    def accept_issue(self, issue_key: str) -> dict[str, Any]:
+    def start_issue(self, issue_key: str) -> dict[str, Any]:
         # The model only provides an issue key. Transition choice stays server-side so
         # the workflow change is constrained by trusted config instead of model output.
         return self._transition_issue(
             issue_key=issue_key.strip(),
-            expected_statuses=TODO_STATUS_NAMES,
-            transition_names=self._settings.jira_accept_transitions,
-            invalid_status_hint=jira_accept_invalid_status_hint(issue_key),
-            success_topic="jira.accept_issue.succeeded",
-            operation_label="accepting",
+            expected_statuses=READY_FOR_WORK_STATUS_NAMES,
+            transition_names=self._settings.jira_start_transitions,
+            invalid_status_hint=jira_start_invalid_status_hint(issue_key),
+            success_topic="jira.start_issue.succeeded",
+            operation_label="starting",
         )
 
     def resolve_issue(self, issue_key: str) -> dict[str, Any]:
@@ -191,7 +191,7 @@ class JiraService:
         # the allowed resolve transition is selected from config to reduce bad or unsafe writes.
         return self._transition_issue(
             issue_key=issue_key.strip(),
-            expected_statuses=ACCEPTED_STATUS_NAMES,
+            expected_statuses=ACTIVE_WORK_STATUS_NAMES,
             transition_names=self._settings.jira_resolve_transitions,
             invalid_status_hint=jira_resolve_invalid_status_hint(issue_key),
             success_topic="jira.resolve_issue.succeeded",

@@ -23,7 +23,7 @@ def _make_settings(**overrides: object) -> Settings:
         server_name="work-assistant-mcp",
         server_instructions="",
         enabled_integrations=("jira",),
-        jira_accept_transitions=("已接收", "Accept"),
+        jira_start_transitions=("已接收", "Accept"),
         jira_resolve_transitions=("已解决", "Resolved"),
         jira_attachment_max_images=5,
         jira_attachment_max_bytes=1024,
@@ -290,7 +290,7 @@ def test_jira_get_latest_assigned_issue_returns_generic_message_for_non_auth_htt
     }
 
 
-def test_jira_accept_issue_rejects_non_todo_status() -> None:
+def test_jira_start_issue_rejects_non_todo_status() -> None:
     search_results = [
         {
             "key": "IOS-123",
@@ -314,15 +314,15 @@ def test_jira_accept_issue_rejects_non_todo_status() -> None:
         return_value=frozenset({"user@example.invalid"}),
     ):
         _, structured = asyncio.run(
-            mcp.call_tool("jira_accept_issue", {"issue_key": "IOS-123"})
+            mcp.call_tool("jira_start_issue", {"issue_key": "IOS-123"})
         )
 
     assert structured == {
         "success": False,
         "error_type": "invalid_status",
         "hint": (
-            "IOS-123 is not in a Todo state and cannot be accepted. "
-            "If it is already in an Accepted state, use the resolve tool instead. "
+            "IOS-123 is not in a ready-for-work state and cannot be started. "
+            "If it is already in an active-work state, use the resolve tool instead. "
             "If still failing, stop and notify the user."
         ),
     }
@@ -365,7 +365,7 @@ def test_jira_resolve_issue_transitions_successfully() -> None:
     assert structured == {"success": True, "issue_key": "IOS-123"}
 
 
-def test_jira_accept_issue_rejects_write_outside_configured_project() -> None:
+def test_jira_start_issue_rejects_write_outside_configured_project() -> None:
     search_results = [
         {
             "key": "ANDROID-123",
@@ -386,7 +386,7 @@ def test_jira_accept_issue_rejects_write_outside_configured_project() -> None:
         return_value=search_results,
     ):
         _, structured = asyncio.run(
-            mcp.call_tool("jira_accept_issue", {"issue_key": "ANDROID-123"})
+            mcp.call_tool("jira_start_issue", {"issue_key": "ANDROID-123"})
         )
 
     assert structured == {
@@ -399,7 +399,7 @@ def test_jira_accept_issue_rejects_write_outside_configured_project() -> None:
     }
 
 
-def test_jira_accept_issue_rejects_issue_not_assigned_to_current_user() -> None:
+def test_jira_start_issue_rejects_issue_not_assigned_to_current_user() -> None:
     lookup_results = [
         {
             "key": "IOS-123",
@@ -423,7 +423,7 @@ def test_jira_accept_issue_rejects_issue_not_assigned_to_current_user() -> None:
         return_value=frozenset({"user@example.invalid"}),
     ):
         _, structured = asyncio.run(
-            mcp.call_tool("jira_accept_issue", {"issue_key": "IOS-123"})
+            mcp.call_tool("jira_start_issue", {"issue_key": "IOS-123"})
         )
 
     assert structured == {

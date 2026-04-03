@@ -29,7 +29,7 @@ class Settings:
     server_name: str
     server_instructions: str
     enabled_integrations: tuple[str, ...]
-    jira_accept_transitions: tuple[str, ...]
+    jira_start_transitions: tuple[str, ...]
     jira_resolve_transitions: tuple[str, ...]
     jira_attachment_max_images: int
     jira_attachment_max_bytes: int
@@ -107,9 +107,9 @@ def validate_settings(settings: Settings) -> None:
             errors.append("jira: missing JIRA_API_TOKEN in environment or .env")
         if not settings.jira_project_key:
             errors.append("jira: missing JIRA_PROJECT_KEY in environment or .env")
-        if not settings.jira_accept_transitions:
+        if not settings.jira_start_transitions:
             errors.append(
-                "jira: missing jira.accept_transitions in config.yaml"
+                "jira: missing jira.start_transitions in config.yaml"
             )
         if not settings.jira_resolve_transitions:
             errors.append(
@@ -170,7 +170,7 @@ def get_settings() -> Settings:
         items = tuple(str(item).strip() for item in value if str(item).strip())
         return items
 
-    jira_accept_transitions = _read_string_list("accept_transitions", [])
+    jira_start_transitions = _read_string_list("start_transitions", [])
     jira_resolve_transitions = _read_string_list("resolve_transitions", [])
 
     yaml_jira_attachments = yaml_jira.get("attachments", {})
@@ -194,7 +194,7 @@ def get_settings() -> Settings:
         server_name=server_name,
         server_instructions=server_instructions,
         enabled_integrations=enabled_integrations,
-        jira_accept_transitions=jira_accept_transitions,
+        jira_start_transitions=jira_start_transitions,
         jira_resolve_transitions=jira_resolve_transitions,
         jira_attachment_max_images=jira_attachment_max_images,
         jira_attachment_max_bytes=jira_attachment_max_bytes,

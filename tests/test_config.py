@@ -15,7 +15,7 @@ integrations:
   enabled:
     - jira
 jira:
-  accept_transitions:
+  start_transitions:
     - Accept
   resolve_transitions:
     - Resolved
@@ -58,7 +58,7 @@ integrations:
   enabled:
     - jira
 jira:
-  accept_transitions:
+  start_transitions:
     - Accept
   resolve_transitions:
     - Resolved
@@ -85,7 +85,7 @@ tools:
   enabled:
     - jira
 jira:
-  accept_transitions:
+  start_transitions:
     - Accept
   resolve_transitions:
     - Resolved

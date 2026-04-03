@@ -115,4 +115,4 @@ If the tool hits a genuinely unexpected exception such as a programming defect o
 
 ## Example: Jira Workflow Tools
 
-`jira_accept_issue(issue_key)` — the server internally resolves which Jira workflow transition represents "accept" based on `JIRA_ACCEPT_TRANSITIONS` config. The model only passes `issue_key`. If no matching transition is found, the tool returns `internal_error` (server misconfiguration), not a list of available transitions for the model to choose from.
+`jira_start_issue(issue_key)` — the server internally resolves which Jira workflow transition represents "start work" based on `jira.start_transitions` config. The model only passes `issue_key`. If no matching transition is found, the tool returns `internal_error` (server misconfiguration), not a list of available transitions for the model to choose from.

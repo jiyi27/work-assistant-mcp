@@ -14,7 +14,7 @@ integrations:
 jira:
   # Candidate workflow transition names for "start working on this issue".
   # The model never sends these names directly; the server resolves them internally.
-  accept_transitions:
+  start_transitions:
     - 已接收
     - Accept
     - 接收
