@@ -11,11 +11,74 @@ Tools are grouped by integration. Each integration is enabled or disabled as a u
 
 ## Configuration
 
-Configuration is split into two files by sensitivity:
+Two files are used. Copy `.env.example` to `.env` for credentials, and edit `config.yaml` for everything else.
 
-### `config.yaml` — non-sensitive settings
+To disable an integration and all its tools, comment out its name in `integrations.enabled` in `config.yaml`.
 
-Controls which integrations are enabled and sets logging, server options, and Jira policy. Committed to the repository.
+### DingTalk
+
+**1. Create a robot** — open the group settings in DingTalk → 机器人管理 → add a 自定义 webhook robot. Copy the webhook URL. If you enable 加签, also copy the signing secret.
+
+**2. Set credentials in `.env`:**
+
+```env
+DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=your_token_here
+DINGTALK_SECRET=SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+`DINGTALK_SECRET` is only required when the robot has 加签 enabled. If it is required but missing, sends will fail with a signature mismatch error.
+
+**3. Enable in `config.yaml`:**
+
+```yaml
+integrations:
+  enabled:
+    - dingtalk
+```
+
+### Jira
+
+**1. Set credentials in `.env`:**
+
+```env
+JIRA_BASE_URL=https://your-jira-instance.example.com
+JIRA_API_TOKEN=your_jira_api_token_here
+JIRA_PROJECT_KEY=PROJECT1
+```
+
+- `JIRA_API_TOKEN` — create one at your Jira profile → Personal Access Tokens.
+- `JIRA_PROJECT_KEY` — the short key for the project this server is allowed to query and update (e.g. `IOS`, `PROJECT1`).
+
+**2. Discover your workflow status names:**
+
+```bash
+uv run python scripts/inspect_jira_issue_workflow.py YOUR-123
+```
+
+This prints every status name and available transition for that issue. Use the output to fill in the next step.
+
+**3. Configure `config.yaml`:**
+
+```yaml
+integrations:
+  enabled:
+    - jira
+
+jira:
+  latest_assigned_statuses:  # statuses that jira_get_latest_assigned_issue will return
+    - 待处理
+    - 已接收
+    - 处理中
+  start_target_status: 已接收    # target status for jira_start_issue
+  resolve_target_status: 已解决  # target status for jira_resolve_issue
+  attachments:
+    max_images: 5
+    max_bytes_per_image: 1048576
+```
+
+These must be **exact Jira status names** (not category names like `In Progress` or `Done`). If multiple transitions reach the same target status, the tool returns a `transition_ambiguous` error — rename statuses or adjust the workflow to resolve it.
+
+### Other `config.yaml` settings
 
 ```yaml
 server:
@@ -25,54 +88,9 @@ server:
 logging:
   dir: logs
   level: info   # debug | info | warning | error
-
-integrations:
-  enabled:
-    - dingtalk
-    # - jira
-    # comment out any line to disable that integration at startup
-
-jira:
-  latest_assigned_statuses:
-    - 待处理
-    - 已接收
-    - 处理中
-  start_target_status: 已接收
-  resolve_target_status: 已解决
-  attachments:
-    max_images: 5
-    max_bytes_per_image: 1048576
 ```
 
-To disable an integration (and all its tools) without removing it from the codebase, comment out its name in `integrations.enabled`.
-When `jira` is enabled, `jira.latest_assigned_statuses`, `jira.start_target_status`, and `jira.resolve_target_status` must be configured explicitly.
-These values are Jira status names, not Jira status categories.
-
-### `.env` — sensitive credentials
-
-Copy `.env.example` to `.env` and fill in the required credentials:
-
-```env
-DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=your_token_here
-DINGTALK_SECRET=SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-JIRA_BASE_URL=https://your-jira-instance.example.com
-JIRA_API_TOKEN=your_jira_api_token_here
-JIRA_PROJECT_KEY=PROJECT1
-```
-
-Notes:
-
-- `DINGTALK_WEBHOOK_URL` is required.
-- `DINGTALK_SECRET` is optional only if the robot does not have "加签" enabled.
-- If "加签" is enabled in DingTalk, `DINGTALK_SECRET` must be set or sends will fail with a signature mismatch error.
-- `JIRA_BASE_URL`, `JIRA_API_TOKEN`, and `JIRA_PROJECT_KEY` are required only when the `jira` integration is enabled.
-- Jira authentication is fixed to `Authorization: Bearer <JIRA_API_TOKEN>` to match the working deployment behavior.
-- `JIRA_PROJECT_KEY` defines the single Jira project this server is allowed to query and update.
-- Keep real tokens and secrets only in local `.env` or environment variables. Do not commit them.
-
-### Environment variable overrides
-
-Environment variables take priority over `config.yaml`. This is useful for CI/CD or Docker deployments:
+Environment variables take priority over `config.yaml` — useful for CI/CD or Docker:
 
 | Variable                   | Overrides       |
 | -------------------------- | --------------- |
@@ -157,43 +175,3 @@ This single command prints:
 - the issue's current status
 - every transition currently available for that issue
 
-## Jira Configuration Workflow
-
-Use this flow when configuring Jira tools for a new project or workflow:
-
-1. Inspect one representative issue:
-
-```bash
-uv run python scripts/inspect_jira_issue_workflow.py IOS-123
-```
-
-2. Read the output fields:
-- `statuses`: all visible Jira status names and their `statusCategory`
-- `available_target_statuses`: statuses the current issue can move to right now
-- `available_transitions`: transition names plus each transition's target status
-
-3. Fill `config.yaml`:
-
-```yaml
-jira:
-  latest_assigned_statuses:
-    - 待处理
-    - 已接收
-    - 处理中
-  start_target_status: 已接收
-  resolve_target_status: 已解决
-```
-
-Guidance:
-
-- `jira.latest_assigned_statuses` controls which issues `jira_get_latest_assigned_issue` is allowed to return.
-- Put only concrete status names in `jira.latest_assigned_statuses`, such as `待处理` or `处理中`.
-- Do not put status categories such as `Done` or `In Progress` into `jira.latest_assigned_statuses`.
-- Set `jira.start_target_status` to one target status name that appears in `available_target_statuses` for issues you want to start.
-- Set `jira.resolve_target_status` to one target status name that appears in `available_target_statuses` for issues you want to resolve.
-- If Jira reports multiple transitions reaching the same target status, the tool stops with a structured `transition_ambiguous` error so you can adjust the workflow or rename statuses.
-
-Behavior summary:
-
-- `jira_get_latest_assigned_issue` queries only the configured project, only issues assigned to the current Jira user, and only issues whose current status is listed in `jira.latest_assigned_statuses`.
-- `jira_start_issue` and `jira_resolve_issue` do not match `statusCategory`; they match the transition destination status name exactly.
