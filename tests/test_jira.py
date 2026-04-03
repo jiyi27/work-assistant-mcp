@@ -23,8 +23,8 @@ def _make_settings(**overrides: object) -> Settings:
         server_name="work-assistant-mcp",
         server_instructions="",
         enabled_integrations=("jira",),
-        jira_start_transitions=("已接收", "Accept"),
-        jira_resolve_transitions=("已解决", "Resolved"),
+        jira_start_target_status="已接收",
+        jira_resolve_target_status="已解决",
         jira_attachment_max_images=5,
         jira_attachment_max_bytes=1024,
     )
@@ -290,7 +290,7 @@ def test_jira_get_latest_assigned_issue_returns_generic_message_for_non_auth_htt
     }
 
 
-def test_jira_start_issue_rejects_non_todo_status() -> None:
+def test_jira_start_issue_returns_transition_not_available_with_current_context() -> None:
     search_results = [
         {
             "key": "IOS-123",
@@ -312,6 +312,12 @@ def test_jira_start_issue_rejects_non_todo_status() -> None:
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
         return_value=frozenset({"user@example.invalid"}),
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_transitions",
+        return_value=[
+            {"id": "41", "name": "Resolve", "to": {"name": "已解决"}},
+            {"id": "42", "name": "Close", "to": {"name": "Closed"}},
+        ],
     ):
         _, structured = asyncio.run(
             mcp.call_tool("jira_start_issue", {"issue_key": "IOS-123"})
@@ -319,13 +325,56 @@ def test_jira_start_issue_rejects_non_todo_status() -> None:
 
     assert structured == {
         "success": False,
-        "error_type": "invalid_status",
+        "error_type": "transition_not_available",
+        "message": "Could not start IOS-123 because no available Jira transition reaches 已接收.",
+        "current_status": "In Progress",
+        "target_status": "已接收",
+        "available_statuses": ["已解决", "Closed"],
         "hint": (
-            "IOS-123 is not in a ready-for-work state and cannot be started. "
-            "If it is already in an active-work state, use the resolve tool instead. "
-            "If still failing, stop and notify the user."
+            "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
+            "and notify the user with the current status, target status, and available target statuses."
         ),
     }
+
+
+def test_jira_start_issue_transitions_by_target_status() -> None:
+    search_results = [
+        {
+            "key": "IOS-123",
+            "fields": {
+                "summary": "Crash on launch",
+                "description": "Steps to reproduce",
+                "status": {"name": "Todo"},
+                "priority": {"name": "High"},
+                "issuetype": {"name": "故障"},
+                "assignee": {"emailAddress": "user@example.invalid"},
+                "updated": "2026-04-02T10:00:00.000+0800",
+            },
+        }
+    ]
+    mcp = create_mcp(_make_settings())
+    with patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
+        return_value=search_results,
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
+        return_value=frozenset({"user@example.invalid"}),
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_transitions",
+        return_value=[
+            {"id": "21", "name": "Start Progress", "to": {"name": "进行中"}},
+            {"id": "22", "name": "Accept", "to": {"name": "已接收"}},
+        ],
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.transition_issue",
+        return_value=None,
+    ) as transition_mock:
+        _, structured = asyncio.run(
+            mcp.call_tool("jira_start_issue", {"issue_key": "IOS-123"})
+        )
+
+    transition_mock.assert_called_once_with("IOS-123", "22")
+    assert structured == {"success": True, "issue_key": "IOS-123", "target_status": "已接收"}
 
 
 def test_jira_resolve_issue_transitions_successfully() -> None:
@@ -352,7 +401,7 @@ def test_jira_resolve_issue_transitions_successfully() -> None:
         return_value=frozenset({"user@example.invalid"}),
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.get_transitions",
-        return_value=[{"id": "31", "name": "已解决"}],
+        return_value=[{"id": "31", "name": "Resolve", "to": {"name": "已解决"}}],
     ), patch(
         "work_assistant_mcp.tools.jira.client.JiraClient.transition_issue",
         return_value=None,
@@ -362,7 +411,55 @@ def test_jira_resolve_issue_transitions_successfully() -> None:
         )
 
     transition_mock.assert_called_once_with("IOS-123", "31")
-    assert structured == {"success": True, "issue_key": "IOS-123"}
+    assert structured == {"success": True, "issue_key": "IOS-123", "target_status": "已解决"}
+
+
+def test_jira_resolve_issue_rejects_ambiguous_target_status() -> None:
+    search_results = [
+        {
+            "key": "IOS-123",
+            "fields": {
+                "summary": "Crash on launch",
+                "description": "Steps to reproduce",
+                "status": {"name": "已接收"},
+                "priority": {"name": "High"},
+                "issuetype": {"name": "故障"},
+                "assignee": {"emailAddress": "user@example.invalid"},
+                "updated": "2026-04-02T10:00:00.000+0800",
+            },
+        }
+    ]
+    mcp = create_mcp(_make_settings())
+    with patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.search_issues",
+        return_value=search_results,
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_current_user_identifiers",
+        return_value=frozenset({"user@example.invalid"}),
+    ), patch(
+        "work_assistant_mcp.tools.jira.client.JiraClient.get_transitions",
+        return_value=[
+            {"id": "31", "name": "Resolve", "to": {"name": "已解决"}},
+            {"id": "32", "name": "Fast Resolve", "to": {"name": "已解决"}},
+        ],
+    ):
+        _, structured = asyncio.run(
+            mcp.call_tool("jira_resolve_issue", {"issue_key": "IOS-123"})
+        )
+
+    assert structured == {
+        "success": False,
+        "error_type": "transition_ambiguous",
+        "message": "Could not resolve IOS-123 because multiple available Jira transitions reach 已解决.",
+        "current_status": "已接收",
+        "target_status": "已解决",
+        "available_statuses": ["已解决"],
+        "matching_transition_names": ["Resolve", "Fast Resolve"],
+        "hint": (
+            "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
+            "and notify the user with the current status, target status, and available target statuses."
+        ),
+    }
 
 
 def test_jira_start_issue_rejects_write_outside_configured_project() -> None:

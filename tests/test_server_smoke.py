@@ -26,8 +26,8 @@ def _make_settings(**overrides: object) -> Settings:
         server_name="work-assistant-mcp",
         server_instructions="",
         enabled_integrations=("dingtalk",),
-        jira_start_transitions=("已接收", "Accept"),
-        jira_resolve_transitions=("已解决", "Resolved"),
+        jira_start_target_status="已接收",
+        jira_resolve_target_status="已解决",
         jira_attachment_max_images=5,
         jira_attachment_max_bytes=1_048_576,
     )
@@ -181,6 +181,7 @@ def test_enabled_integrations_can_register_jira_only() -> None:
     tools = asyncio.run(mcp.list_tools())
     assert [tool.name for tool in tools] == [
         "jira_get_latest_assigned_issue",
+        "jira_get_attachment_image",
         "jira_start_issue",
         "jira_resolve_issue",
     ]

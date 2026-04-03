@@ -7,12 +7,11 @@ from ...config import Settings
 from ...error_messages import format_http_service_error
 from ...hints import (
     INTERNAL_ERROR_RETRY_HINT,
-    jira_start_invalid_status_hint,
+    JIRA_TRANSITION_FAILURE_HINT,
     jira_assignee_not_allowed_hint,
     jira_attachment_not_found_hint,
     jira_issue_not_found_hint,
     jira_project_not_allowed_hint,
-    jira_resolve_invalid_status_hint,
     required_param_hint,
 )
 from ...logger import error, info, warning
@@ -31,8 +30,6 @@ JIRA_ISSUE_FIELDS = (
     "updated",
 )
 OPEN_STATUS_CLAUSE = "statusCategory != Done"
-READY_FOR_WORK_STATUS_NAMES = frozenset({"todo", "待办", "open", "backlog", "new"})
-ACTIVE_WORK_STATUS_NAMES = frozenset({"已接收", "accepted", "in progress", "进行中"})
 
 
 class JiraService:
@@ -175,36 +172,26 @@ class JiraService:
         }
 
     def start_issue(self, issue_key: str) -> dict[str, Any]:
-        # The model only provides an issue key. Transition choice stays server-side so
-        # the workflow change is constrained by trusted config instead of model output.
         return self._transition_issue(
             issue_key=issue_key.strip(),
-            expected_statuses=READY_FOR_WORK_STATUS_NAMES,
-            transition_names=self._settings.jira_start_transitions,
-            invalid_status_hint=jira_start_invalid_status_hint(issue_key),
+            target_status=self._settings.jira_start_target_status,
             success_topic="jira.start_issue.succeeded",
-            operation_label="starting",
+            operation_label="start",
         )
 
     def resolve_issue(self, issue_key: str) -> dict[str, Any]:
-        # Keep the action surface minimal: issue_key identifies the target issue, while
-        # the allowed resolve transition is selected from config to reduce bad or unsafe writes.
         return self._transition_issue(
             issue_key=issue_key.strip(),
-            expected_statuses=ACTIVE_WORK_STATUS_NAMES,
-            transition_names=self._settings.jira_resolve_transitions,
-            invalid_status_hint=jira_resolve_invalid_status_hint(issue_key),
+            target_status=self._settings.jira_resolve_target_status,
             success_topic="jira.resolve_issue.succeeded",
-            operation_label="resolving",
+            operation_label="resolve",
         )
 
     def _transition_issue(
         self,
         *,
         issue_key: str,
-        expected_statuses: frozenset[str],
-        transition_names: tuple[str, ...],
-        invalid_status_hint: str,
+        target_status: str,
         success_topic: str,
         operation_label: str,
     ) -> dict[str, Any]:
@@ -251,34 +238,62 @@ class JiraService:
                 "hint": jira_assignee_not_allowed_hint(issue.key),
             }
 
-        if issue.status.lower() not in expected_statuses:
-            warning(
-                success_topic.replace(".succeeded", ".invalid_status"),
-                {"issue_key": issue_key, "current_status": issue.status},
-            )
-            return {
-                "success": False,
-                "error_type": "invalid_status",
-                "hint": invalid_status_hint,
-            }
-
         try:
             transitions = self._client.get_transitions(issue_key)
         except JiraApiError as exc:
             error(success_topic.replace(".succeeded", ".transitions_failed"), {"issue_key": issue_key}, exc=exc)
             return self._internal_error(self._api_error_message(f"fetching transitions for {issue_key}", exc))
 
-        selected = self._find_transition(transitions, transition_names)
+        selected = self._find_transition_to_status(transitions, target_status)
+        available_statuses = self._available_transition_statuses(transitions)
         if selected is None:
-            warning(success_topic.replace(".succeeded", ".transition_not_found"), {"issue_key": issue_key})
-            return self._internal_error(
-                f"No configured Jira workflow transition matched for {issue_key}. Server configuration may need updating."
+            warning(
+                success_topic.replace(".succeeded", ".transition_not_available"),
+                {
+                    "issue_key": issue_key,
+                    "current_status": issue.status,
+                    "target_status": target_status,
+                    "available_statuses": available_statuses,
+                },
             )
+            return {
+                "success": False,
+                "error_type": "transition_not_available",
+                "message": f"Could not {operation_label} {issue_key} because no available Jira transition reaches {target_status}.",
+                "current_status": issue.status,
+                "target_status": target_status,
+                "available_statuses": available_statuses,
+                "hint": JIRA_TRANSITION_FAILURE_HINT,
+            }
+        if isinstance(selected, list):
+            matching_transition_names = [
+                str(item.get("name") or "") for item in selected if str(item.get("name") or "").strip()
+            ]
+            warning(
+                success_topic.replace(".succeeded", ".transition_ambiguous"),
+                {
+                    "issue_key": issue_key,
+                    "current_status": issue.status,
+                    "target_status": target_status,
+                    "available_statuses": available_statuses,
+                    "matching_transition_names": matching_transition_names,
+                },
+            )
+            return {
+                "success": False,
+                "error_type": "transition_ambiguous",
+                "message": f"Could not {operation_label} {issue_key} because multiple available Jira transitions reach {target_status}.",
+                "current_status": issue.status,
+                "target_status": target_status,
+                "available_statuses": available_statuses,
+                "matching_transition_names": matching_transition_names,
+                "hint": JIRA_TRANSITION_FAILURE_HINT,
+            }
 
         transition_id = str(selected.get("id") or "")
         if not transition_id:
             return self._internal_error(
-                f"Jira returned a transition without an id while {operation_label} {issue_key}."
+                f"Jira returned a transition without an id while trying to {operation_label} {issue_key}."
             )
 
         try:
@@ -293,9 +308,14 @@ class JiraService:
 
         info(
             success_topic,
-            {"issue_key": issue_key, "transition_id": transition_id, "transition_name": selected.get("name")},
+            {
+                "issue_key": issue_key,
+                "transition_id": transition_id,
+                "transition_name": selected.get("name"),
+                "target_status": target_status,
+            },
         )
-        return {"success": True, "issue_key": issue_key}
+        return {"success": True, "issue_key": issue_key, "target_status": target_status}
 
     def _get_latest_assigned_issue(self) -> JiraIssue | None:
         issues = self._client.search_issues(
@@ -365,16 +385,42 @@ class JiraService:
             return attachment
         return None
 
+    @classmethod
+    def _find_transition_to_status(
+        cls, transitions: list[dict[str, Any]], target_status: str
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
+        matches = [
+            item
+            for item in transitions
+            if cls._transition_target_status(item).lower() == target_status.lower()
+        ]
+        if not matches:
+            return None
+        if len(matches) == 1:
+            return matches[0]
+        return matches
+
     @staticmethod
-    def _find_transition(
-        transitions: list[dict[str, Any]], preferred_names: tuple[str, ...]
-    ) -> dict[str, Any] | None:
-        for name in preferred_names:
-            for item in transitions:
-                transition_name = item.get("name")
-                if isinstance(transition_name, str) and transition_name.lower() == name.lower():
-                    return item
-        return None
+    def _transition_target_status(transition: dict[str, Any]) -> str:
+        target = transition.get("to")
+        if not isinstance(target, dict):
+            return ""
+        return str(target.get("name") or "").strip()
+
+    @classmethod
+    def _available_transition_statuses(cls, transitions: list[dict[str, Any]]) -> list[str]:
+        seen: set[str] = set()
+        statuses: list[str] = []
+        for item in transitions:
+            status = cls._transition_target_status(item)
+            if not status:
+                continue
+            lowered = status.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            statuses.append(status)
+        return statuses
 
     @staticmethod
     def _internal_error(message: str) -> dict[str, Any]:

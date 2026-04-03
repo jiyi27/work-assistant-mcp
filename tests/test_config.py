@@ -15,10 +15,8 @@ integrations:
   enabled:
     - jira
 jira:
-  start_transitions:
-    - Accept
-  resolve_transitions:
-    - Resolved
+  start_target_status: 已接收
+  resolve_target_status: 已解决
 """.strip(),
         encoding="utf-8",
     )
@@ -58,10 +56,8 @@ integrations:
   enabled:
     - jira
 jira:
-  start_transitions:
-    - Accept
-  resolve_transitions:
-    - Resolved
+  start_target_status: 已接收
+  resolve_target_status: 已解决
 """.strip(),
         encoding="utf-8",
     )
@@ -85,10 +81,8 @@ tools:
   enabled:
     - jira
 jira:
-  start_transitions:
-    - Accept
-  resolve_transitions:
-    - Resolved
+  start_target_status: 已接收
+  resolve_target_status: 已解决
 """.strip(),
         encoding="utf-8",
     )

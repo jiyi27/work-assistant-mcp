@@ -12,22 +12,12 @@ integrations:
     - jira
 
 jira:
-  # Candidate workflow transition names for "start working on this issue".
-  # The model never sends these names directly; the server resolves them internally.
-  start_transitions:
-    - 已接收
-    - Accept
-    - 接收
-    - 接收缺陷
-    - Start Progress
-    - In Progress
-  # Candidate workflow transition names for "this issue is fixed and ready for verification".
-  resolve_transitions:
-    - 已解决
-    - Resolved
-    - Resolve
-    - 完成
-    - Done
+  # Target Jira status for jira_start_issue.
+  # The server selects the currently available transition whose destination status matches this value.
+  start_target_status: 已接收
+  # Target Jira status for jira_resolve_issue.
+  # The server selects the currently available transition whose destination status matches this value.
+  resolve_target_status: 已解决
   attachments:
     # Cap how many Jira images are returned to the model for a single issue.
     max_images: 5

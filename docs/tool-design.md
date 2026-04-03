@@ -92,7 +92,7 @@ A known but non-recoverable integration failure inside the tool (e.g. downstream
 ```
 
 **Rules for internal errors:**
-- Never expose raw internal state (e.g. available options the model cannot select from).
+- Never expose raw internal state unless that state is the direct reason the tool could not complete a configured action and the model must stop and notify the user.
 - The `message` is for the human to read, not for the model to act on.
 - Use this shape for expected boundary failures that the tool explicitly handles.
 - The `hint` may include a bounded retry policy when the failure is plausibly transient.
@@ -107,12 +107,12 @@ If the tool hits a genuinely unexpected exception such as a programming defect o
 
 | Field                                                           | Reason to exclude                                                                                                                                        |
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Internal option lists (e.g. available transitions, enum values) | Model has no parameter to pass them — exposing these causes it to misuse other parameters; configuration belongs in server config, owned by the operator |
-| Internal state fields (e.g. current status, raw config)         | Model cannot change internal state directly via this tool                                                                                                |
+| Internal option lists unrelated to the failure                  | Model has no parameter to pass them — exposing these causes it to misuse other parameters; configuration belongs in server config, owned by the operator |
+| Internal state fields unrelated to the failure                  | Model cannot change internal state directly via this tool                                                                                                |
 | Raw downstream API errors                                       | Too noisy; wrap in `message` under `internal_error` instead                                                                                              |
 | Open-ended hints ("assess whether X", "check if Y applies")     | Leads to guessing and retry loops                                                                                                                        |
 | Tool-selection speculation                                      | Prefer describing the intended next action unless a concrete tool name is part of a fixed workflow                                                       |
 
 ## Example: Jira Workflow Tools
 
-`jira_start_issue(issue_key)` — the server internally resolves which Jira workflow transition represents "start work" based on `jira.start_transitions` config. The model only passes `issue_key`. If no matching transition is found, the tool returns `internal_error` (server misconfiguration), not a list of available transitions for the model to choose from.
+`jira_start_issue(issue_key)` — the server reads `jira.start_target_status`, fetches the issue's currently available Jira transitions, and executes the single transition whose destination status matches the configured target. If no transition reaches that status, or multiple transitions do, the tool returns a structured failure with the current status and available target statuses so the model can stop and notify the user cleanly.

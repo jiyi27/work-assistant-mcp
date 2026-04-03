@@ -23,21 +23,10 @@ def jira_issue_not_found_hint(issue_key: str) -> str:
     )
 
 
-def jira_start_invalid_status_hint(issue_key: str) -> str:
-    return (
-        f"{issue_key} is not in a ready-for-work state and cannot be started. "
-        "If it is already in an active-work state, use the resolve tool instead. "
-        "If still failing, stop and notify the user."
-    )
-
-
-def jira_resolve_invalid_status_hint(issue_key: str) -> str:
-    return (
-        f"{issue_key} is not in an active-work state and cannot be resolved. "
-        "If it is still in a ready-for-work state, check whether any available tool can first "
-        "move it into an active-work state, then retry. "
-        "If still failing, stop and notify the user."
-    )
+JIRA_TRANSITION_FAILURE_HINT = (
+    "The Jira workflow change could not be completed. Stop execution, summarize what you completed, "
+    "and notify the user with the current status, target status, and available target statuses."
+)
 
 
 def jira_project_not_allowed_hint(issue_key: str) -> str:
