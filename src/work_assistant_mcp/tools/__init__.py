@@ -1,4 +1,4 @@
-"""Integration registry — maps enabled integrations to their tool registration functions."""
+"""Plugin registry — maps enabled plugins to their tool registration functions."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ..config import Settings
 from .dingtalk import register_dingtalk_tools
 from .jira import register_jira_tools
 
-INTEGRATION_REGISTRY: dict[str, Callable[[FastMCP, Settings], None]] = {
+PLUGIN_REGISTRY: dict[str, Callable[[FastMCP, Settings], None]] = {
     "dingtalk": register_dingtalk_tools,
     "jira": register_jira_tools,
 }

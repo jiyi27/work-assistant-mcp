@@ -11,7 +11,7 @@ def test_get_settings_allows_jira_without_dingtalk(monkeypatch: pytest.MonkeyPat
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
 """
-integrations:
+plugins:
   enabled:
     - jira
 jira:
@@ -43,7 +43,7 @@ jira:
 
     settings = config_module.get_settings()
 
-    assert settings.enabled_integrations == ("jira",)
+    assert settings.enabled_plugins == ("jira",)
     assert settings.dingtalk_webhook_url == ""
     assert settings.jira_base_url == "https://jira.example.invalid"
     assert settings.jira_project_key == "IOS"
@@ -55,7 +55,7 @@ def test_get_settings_requires_jira_credentials_when_jira_enabled(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
 """
-integrations:
+plugins:
   enabled:
     - jira
 jira:
@@ -77,15 +77,14 @@ jira:
         config_module.get_settings()
 
 
-def test_get_settings_supports_legacy_tools_enabled_key(
+def test_get_settings_requires_plugins_section_to_be_a_mapping(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-tools:
-  enabled:
-    - jira
+plugins:
+  - jira
 jira:
   latest_assigned_statuses:
     - 待处理
@@ -95,25 +94,10 @@ jira:
 """.strip(),
         encoding="utf-8",
     )
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "JIRA_BASE_URL=https://jira.example.invalid",
-                "JIRA_API_TOKEN=secret-token",
-                "JIRA_PROJECT_KEY=IOS",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.delenv("JIRA_BASE_URL", raising=False)
-    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
 
-    settings = config_module.get_settings()
-
-    assert settings.enabled_integrations == ("jira",)
+    with pytest.raises(RuntimeError, match="Invalid plugins section"):
+        config_module.get_settings()
 
 
 def test_get_settings_requires_latest_assigned_statuses_when_jira_enabled(
@@ -122,7 +106,7 @@ def test_get_settings_requires_latest_assigned_statuses_when_jira_enabled(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-integrations:
+plugins:
   enabled:
     - jira
 jira:

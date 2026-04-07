@@ -2,9 +2,9 @@
 
 An MCP server for work-related tools used by local agents.
 
-Tools are grouped by integration. Each integration is enabled or disabled as a unit in `config.yaml`.
+Tools are grouped by plugin. Each plugin is enabled or disabled as a unit in `config.yaml`.
 
-| Integration | Tools                                                               |
+| Plugin | Tools                                                                    |
 | ----------- | ------------------------------------------------------------------- |
 | `dingtalk`  | `dingtalk_send_markdown`                                            |
 | `jira`      | `jira_get_latest_assigned_issue`, `jira_get_attachment_image`, `jira_start_issue`, `jira_resolve_issue` |
@@ -13,7 +13,7 @@ Tools are grouped by integration. Each integration is enabled or disabled as a u
 
 Two files are used. Copy `.env.example` to `.env` for credentials, and edit `config.yaml` for everything else.
 
-To disable an integration and all its tools, comment out its name in `integrations.enabled` in `config.yaml`.
+To disable a plugin and all its tools, comment out its name in `plugins.enabled` in `config.yaml`.
 
 ### DingTalk
 
@@ -31,7 +31,7 @@ DINGTALK_SECRET=SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 **3. Enable in `config.yaml`:**
 
 ```yaml
-integrations:
+plugins:
   enabled:
     - dingtalk
 ```
@@ -60,7 +60,7 @@ This prints every status name and available transition for that issue. Use the o
 **3. Configure `config.yaml`:**
 
 ```yaml
-integrations:
+plugins:
   enabled:
     - jira
 
@@ -100,10 +100,10 @@ Environment variables take priority over `config.yaml` — useful for CI/CD or D
 ## Adding a New Tool
 
 1. Implement `register_<name>_tools(mcp: FastMCP, settings: Settings)` under `src/work_assistant_mcp/tools/`.
-2. Keep simple integrations in a single module such as `src/work_assistant_mcp/tools/<name>.py`.
-3. When an integration grows into multiple focused files, group it as a package such as `src/work_assistant_mcp/tools/<name>/`.
-4. Add an entry to `INTEGRATION_REGISTRY` in `src/work_assistant_mcp/tools/__init__.py`.
-5. Add the integration name to `integrations.enabled` in `config.yaml`.
+2. Keep simple plugins in a single module such as `src/work_assistant_mcp/tools/<name>.py`.
+3. When a plugin grows into multiple focused files, group it as a package such as `src/work_assistant_mcp/tools/<name>/`.
+4. Add an entry to `PLUGIN_REGISTRY` in `src/work_assistant_mcp/tools/__init__.py`.
+5. Add the plugin name to `plugins.enabled` in `config.yaml`.
 
 ## Agent Setup
 
@@ -174,4 +174,3 @@ This single command prints:
 - all visible Jira `status` values
 - the issue's current status
 - every transition currently available for that issue
-

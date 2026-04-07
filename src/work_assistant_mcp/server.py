@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .config import Settings, get_settings
 from .logger import configure as configure_logger, info, error
-from .tools import INTEGRATION_REGISTRY
+from .tools import PLUGIN_REGISTRY
 
 
 # AOP-style cross-cutting concern: intercept every tool call to inject structured logging.
@@ -61,13 +61,13 @@ def create_mcp(settings: Settings) -> FastMCP:
     # From this point on, every @mcp.tool(...) call goes through mcp_tool_with_logging instead.
     mcp.tool = mcp_tool_with_logging
 
-    for integration_name in settings.enabled_integrations:
-        register_fn = INTEGRATION_REGISTRY.get(integration_name)
+    for plugin_name in settings.enabled_plugins:
+        register_fn = PLUGIN_REGISTRY.get(plugin_name)
         if register_fn is None:
-            known = ", ".join(sorted(INTEGRATION_REGISTRY))
+            known = ", ".join(sorted(PLUGIN_REGISTRY))
             raise RuntimeError(
-                f"Unknown integration '{integration_name}' in config.yaml. "
-                f"Available integrations: {known}"
+                f"Unknown plugin '{plugin_name}' in config.yaml. "
+                f"Available plugins: {known}"
             )
         register_fn(mcp, settings)
     return mcp

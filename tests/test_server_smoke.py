@@ -25,7 +25,7 @@ def _make_settings(**overrides: object) -> Settings:
         log_level="info",
         server_name="work-assistant-mcp",
         server_instructions="",
-        enabled_integrations=("dingtalk",),
+        enabled_plugins=("dingtalk",),
         jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",
         jira_resolve_target_status="已解决",
@@ -165,20 +165,20 @@ def test_dingtalk_send_markdown_returns_clean_message_for_http_failure() -> None
     }
 
 
-def test_enabled_integrations_controls_which_tools_are_registered() -> None:
-    mcp_empty = create_mcp(_make_settings(enabled_integrations=()))
+def test_enabled_plugins_controls_which_tools_are_registered() -> None:
+    mcp_empty = create_mcp(_make_settings(enabled_plugins=()))
     tools = asyncio.run(mcp_empty.list_tools())
     assert tools == []
 
     mcp_with_dingtalk = create_mcp(
-        _make_settings(enabled_integrations=("dingtalk",))
+        _make_settings(enabled_plugins=("dingtalk",))
     )
     tools = asyncio.run(mcp_with_dingtalk.list_tools())
     assert [t.name for t in tools] == ["dingtalk_send_markdown"]
 
 
-def test_enabled_integrations_can_register_jira_only() -> None:
-    mcp = create_mcp(_make_settings(enabled_integrations=("jira",)))
+def test_enabled_plugins_can_register_jira_only() -> None:
+    mcp = create_mcp(_make_settings(enabled_plugins=("jira",)))
     tools = asyncio.run(mcp.list_tools())
     assert [tool.name for tool in tools] == [
         "jira_get_latest_assigned_issue",

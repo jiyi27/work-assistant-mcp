@@ -22,7 +22,7 @@ def _make_settings(**overrides: object) -> Settings:
         log_level="info",
         server_name="work-assistant-mcp",
         server_instructions="",
-        enabled_integrations=("jira",),
+        enabled_plugins=("jira",),
         jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",
         jira_resolve_target_status="已解决",

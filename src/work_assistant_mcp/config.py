@@ -12,7 +12,7 @@ ENV_FILE_NAME = ".env"
 YAML_CONFIG_FILE = "config.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
-KNOWN_INTEGRATIONS = frozenset({"dingtalk", "jira"})
+KNOWN_PLUGINS = frozenset({"dingtalk", "jira"})
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class Settings:
     log_level: str
     server_name: str
     server_instructions: str
-    enabled_integrations: tuple[str, ...]
+    enabled_plugins: tuple[str, ...]
     jira_latest_assigned_statuses: tuple[str, ...]
     jira_start_target_status: str
     jira_resolve_target_status: str
@@ -69,26 +69,20 @@ def load_yaml_config(yaml_path: Path | None = None) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
-def _read_enabled_integrations(yaml_cfg: dict[str, Any]) -> tuple[str, ...]:
-    yaml_integrations = yaml_cfg.get("integrations")
-    if yaml_integrations is None:
-        yaml_integrations = yaml_cfg.get("tools", {})
-    if not isinstance(yaml_integrations, dict):
-        raise RuntimeError(
-            "Invalid integrations section in config.yaml. Expected a mapping."
-        )
-    raw_enabled = yaml_integrations.get("enabled", [])
+def _read_enabled_plugins(yaml_cfg: dict[str, Any]) -> tuple[str, ...]:
+    yaml_plugins = yaml_cfg.get("plugins", {})
+    if not isinstance(yaml_plugins, dict):
+        raise RuntimeError("Invalid plugins section in config.yaml. Expected a mapping.")
+    raw_enabled = yaml_plugins.get("enabled", [])
     if not isinstance(raw_enabled, list):
-        raise RuntimeError(
-            "Invalid integrations.enabled in config.yaml. Expected a list."
-        )
+        raise RuntimeError("Invalid plugins.enabled in config.yaml. Expected a list.")
     enabled = tuple(str(item).strip() for item in raw_enabled if str(item).strip())
-    unknown = sorted(set(enabled) - KNOWN_INTEGRATIONS)
+    unknown = sorted(set(enabled) - KNOWN_PLUGINS)
     if unknown:
-        known = ", ".join(sorted(KNOWN_INTEGRATIONS))
+        known = ", ".join(sorted(KNOWN_PLUGINS))
         joined = ", ".join(unknown)
         raise RuntimeError(
-            f"Unknown integration(s) in config.yaml: {joined}. Available integrations: {known}"
+            f"Unknown plugin(s) in config.yaml: {joined}. Available plugins: {known}"
         )
     return enabled
 
@@ -103,12 +97,12 @@ def _read_string_list(section: dict[str, Any], key: str) -> tuple[str, ...]:
 def validate_settings(settings: Settings) -> None:
     errors: list[str] = []
 
-    if "dingtalk" in settings.enabled_integrations and not settings.dingtalk_webhook_url:
+    if "dingtalk" in settings.enabled_plugins and not settings.dingtalk_webhook_url:
         errors.append(
             "dingtalk: missing DINGTALK_WEBHOOK_URL in environment or .env"
         )
 
-    if "jira" in settings.enabled_integrations:
+    if "jira" in settings.enabled_plugins:
         if not settings.jira_base_url:
             errors.append("jira: missing JIRA_BASE_URL in environment or .env")
         if not settings.jira_api_token:
@@ -136,13 +130,13 @@ def validate_settings(settings: Settings) -> None:
 
     if errors:
         lines = "\n".join(f"- {item}" for item in errors)
-        raise RuntimeError(f"Invalid configuration for enabled integrations:\n{lines}")
+        raise RuntimeError(f"Invalid configuration for enabled plugins:\n{lines}")
 
 
 def get_settings() -> Settings:
     load_env_file()
     yaml_cfg = load_yaml_config()
-    enabled_integrations = _read_enabled_integrations(yaml_cfg)
+    enabled_plugins = _read_enabled_plugins(yaml_cfg)
 
     # sensitive values — only from environment
     webhook_url = os.getenv("DINGTALK_WEBHOOK_URL", "").strip()
@@ -203,7 +197,7 @@ def get_settings() -> Settings:
         log_level=log_level,
         server_name=server_name,
         server_instructions=server_instructions,
-        enabled_integrations=enabled_integrations,
+        enabled_plugins=enabled_plugins,
         jira_latest_assigned_statuses=jira_latest_assigned_statuses,
         jira_start_target_status=jira_start_target_status,
         jira_resolve_target_status=jira_resolve_target_status,
