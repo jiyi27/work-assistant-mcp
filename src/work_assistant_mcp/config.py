@@ -26,9 +26,6 @@ class ServerSettings:
 @dataclass(frozen=True)
 class LogSearchSettings:
     log_base_dir: str
-    file_pattern: str
-    levels: tuple[str, ...]
-    services: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -151,18 +148,8 @@ def _read_log_search_settings(yaml_cfg: dict[str, Any]) -> LogSearchSettings | N
         )
 
     log_base_dir = str(yaml_log_search.get("log_base_dir", "")).strip()
-    file_pattern = str(yaml_log_search.get("file_pattern", "")).strip()
-    levels = tuple(
-        str(l).strip() for l in yaml_log_search.get("levels", []) if str(l).strip()
-    )
-    services = tuple(
-        str(s).strip() for s in yaml_log_search.get("services", []) if str(s).strip()
-    )
     return LogSearchSettings(
         log_base_dir=log_base_dir,
-        file_pattern=file_pattern,
-        levels=levels,
-        services=services,
     )
 
 
@@ -220,22 +207,6 @@ def validate_settings(settings: Settings) -> None:
             if not settings.log_search.log_base_dir:
                 errors.append(
                     "log_search: missing plugins.log_search.log_base_dir in config.yaml"
-                )
-            if not settings.log_search.file_pattern:
-                errors.append(
-                    "log_search: missing plugins.log_search.file_pattern in config.yaml"
-                )
-            if not settings.log_search.services:
-                errors.append(
-                    "log_search: missing or empty plugins.log_search.services in config.yaml"
-                )
-            if (
-                settings.log_search.file_pattern
-                and "{level}" in settings.log_search.file_pattern
-                and not settings.log_search.levels
-            ):
-                errors.append(
-                    "log_search: file_pattern contains {level} but plugins.log_search.levels is empty in config.yaml"
                 )
 
     if errors:

@@ -1,57 +1,113 @@
 from __future__ import annotations
 
-import asyncio
-import json
-from datetime import datetime, timedelta
+from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import aiofiles
 
 from ...config import LogSearchSettings
-from ...hints import positive_int_param_hint, required_param_hint
-from .strings import HINT_INVALID_SERVICE, HINT_NO_RESULTS, HINT_NO_SERVICES_CONFIGURED
+from ...hints import required_param_hint
+from .strings import (
+    HINT_LIST_LOG_FILES_SUCCESS,
+    HINT_NO_RESULTS,
+    HINT_PATH_OUTSIDE_BASE,
+    TOOL_LIST_LOG_FILES,
+    TOOL_SEARCH_LOG,
+)
+
+_MAX_RESULTS = 50
+_CONTEXT_LINES = 3
+_MAX_LISTED_FILES = 10
 
 
 class LogSearchService:
     def __init__(self, settings: LogSearchSettings) -> None:
         self._settings = settings
+        self._base = Path(settings.log_base_dir).resolve()
 
-    async def list_services(self) -> dict[str, Any]:
-        if not self._settings.services:
+    def _safe_resolve(self, relative: str) -> Path | None:
+        """Resolve a path relative to log_base_dir. Returns None if outside base."""
+        target = (self._base / relative).resolve()
+        try:
+            target.relative_to(self._base)
+        except ValueError:
+            return None
+        return target
+
+    def list_files(self, path: str = "") -> dict[str, Any]:
+        relative = path.strip()
+        if relative in {".", "./"}:
+            relative = ""
+        if relative.endswith("/"):
+            relative = relative.rstrip("/")
+
+        target = self._safe_resolve(relative)
+        if target is None:
             return {
                 "success": False,
-                "error_type": "no_services_configured",
-                "hint": HINT_NO_SERVICES_CONFIGURED,
+                "error_type": "path_outside_base",
+                "hint": HINT_PATH_OUTSIDE_BASE,
+            }
+        if not target.exists():
+            return {
+                "success": False,
+                "error_type": "path_not_found",
+                "hint": (
+                    f"Path '{relative or '.'}' does not exist. "
+                    f"Call {TOOL_LIST_LOG_FILES} with an existing directory path."
+                ),
+            }
+        if not target.is_dir():
+            return {
+                "success": False,
+                "error_type": "not_a_directory",
+                "hint": (
+                    f"'{relative}' is a file, not a directory. "
+                    f"Use {TOOL_SEARCH_LOG} to search files."
+                ),
             }
 
-        services_info = []
-        for service in self._settings.services:
-            files = self._resolve_candidate_files(service)
-            if files:
-                latest = max(files, key=lambda p: p.stat().st_mtime)
-                mtime = datetime.fromtimestamp(latest.stat().st_mtime)
-                services_info.append({
-                    "service": service,
-                    "latest_file": latest.name,
-                    "latest_mtime": mtime.strftime("%Y-%m-%d %H:%M:%S"),
-                })
+        dirs: list[dict[str, Any]] = []
+        files: list[tuple[float, dict[str, Any]]] = []
+        for child in target.iterdir():
+            rel = str(child.relative_to(self._base))
+            if child.is_dir():
+                dirs.append({"name": child.name, "type": "dir", "path": rel})
             else:
-                services_info.append({
-                    "service": service,
-                    "latest_file": None,
-                    "latest_mtime": None,
-                })
-        return {"success": True, "services": services_info}
+                stat = child.stat()
+                files.append((
+                    stat.st_mtime,
+                    {
+                        "name": child.name,
+                        "type": "file",
+                        "path": rel,
+                        "size_kb": round(stat.st_size / 1024, 1),
+                        "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    },
+                ))
 
-    async def search(self, service: str, query: str, limit: int = 100) -> dict[str, Any]:
-        service = service.strip()
+        dirs.sort(key=lambda entry: entry["name"])
+        files.sort(key=lambda item: (-item[0], item[1]["name"]))
+        entries = dirs + [entry for _, entry in files[:_MAX_LISTED_FILES]]
+
+        return {
+            "success": True,
+            "path": relative,
+            "entries": entries,
+            "hint": HINT_LIST_LOG_FILES_SUCCESS,
+        }
+
+    async def search(self, file_path: str, query: str) -> dict[str, Any]:
+        file_path = file_path.strip()
         query = query.strip()
-        if not service:
+
+        if not file_path:
             return {
                 "success": False,
                 "error_type": "invalid_input",
-                "hint": required_param_hint("service"),
+                "hint": required_param_hint("file_path"),
             }
         if not query:
             return {
@@ -59,88 +115,78 @@ class LogSearchService:
                 "error_type": "invalid_input",
                 "hint": required_param_hint("query"),
             }
-        if limit <= 0:
+
+        target = self._safe_resolve(file_path)
+        if target is None:
             return {
                 "success": False,
-                "error_type": "invalid_input",
-                "hint": positive_int_param_hint("limit"),
+                "error_type": "path_outside_base",
+                "hint": HINT_PATH_OUTSIDE_BASE,
             }
-        if service not in self._settings.services:
+        if not target.exists():
             return {
                 "success": False,
-                "error_type": "invalid_service",
-                "hint": HINT_INVALID_SERVICE,
+                "error_type": "file_not_found",
+                "hint": (
+                    f"File '{file_path}' does not exist. "
+                    f"Call {TOOL_LIST_LOG_FILES} to verify the path."
+                ),
+            }
+        # P1: reject directories — agent may pass a dir path from list_log_files
+        if target.is_dir():
+            return {
+                "success": False,
+                "error_type": "not_a_file",
+                "hint": (
+                    f"'{file_path}' is a directory. "
+                    f"Call {TOOL_LIST_LOG_FILES} to list its contents."
+                ),
             }
 
-        files = self._resolve_candidate_files(service)
-        tasks = [self._search_file(f, query, limit) for f in files]
-        chunks = await asyncio.gather(*tasks)
+        # P2: stream line by line — maintain a pre-context deque and mutate
+        # each result's context list in place to collect post-context lines.
+        pre_buffer: deque[str] = deque(maxlen=_CONTEXT_LINES)
+        results: list[dict[str, Any]] = []
+        # Each entry: (context_list, remaining_post_lines)
+        post_collectors: list[tuple[list[str], int]] = []
+        truncated = False
+        line_no = 0
 
-        all_results: list[dict[str, Any]] = []
-        for chunk in chunks:
-            all_results.extend(chunk)
+        async with aiofiles.open(target, encoding="utf-8", errors="replace") as f:
+            async for raw_line in f:
+                line_no += 1
+                line = raw_line.rstrip("\n")
 
-        all_results.sort(key=lambda e: e.get("time", ""), reverse=True)
-        all_results = all_results[:limit]
-        all_results.reverse()
+                # Feed line to any open post-context collectors
+                still_open = []
+                for ctx, remaining in post_collectors:
+                    ctx.append(line)
+                    if remaining > 1:
+                        still_open.append((ctx, remaining - 1))
+                post_collectors = still_open
 
-        if not all_results:
+                if query.lower() in line.lower():
+                    if len(results) >= _MAX_RESULTS:
+                        truncated = True
+                        break
+                    ctx: list[str] = list(pre_buffer) + [line]
+                    results.append({"line_no": line_no, "match": line, "context": ctx})
+                    post_collectors.append((ctx, _CONTEXT_LINES))
+
+                pre_buffer.append(line)
+
+        if not results:
             return {
                 "success": True,
                 "results": [],
                 "hint": HINT_NO_RESULTS,
             }
-        return {"success": True, "results": all_results}
 
-    def _resolve_candidate_files(self, service: str) -> list[Path]:
-        now = datetime.now()
-        pattern = self._settings.file_pattern
-        base = Path(self._settings.log_base_dir) / service
-
-        time_slots = [now, now - timedelta(hours=1)] if "{H}" in pattern else [now]
-        levels = list(self._settings.levels) if "{level}" in pattern else [""]
-
-        seen: set[Path] = set()
-        candidates: list[Path] = []
-        for dt in time_slots:
-            for level in levels:
-                path = base / self._expand_pattern(pattern, dt, level)
-                if path in seen:
-                    continue
-                seen.add(path)
-                if path.exists():
-                    candidates.append(path)
-
-        return sorted(candidates, key=lambda p: p.stat().st_mtime)
-
-    def _expand_pattern(self, pattern: str, dt: datetime, level: str) -> str:
-        result = (
-            pattern
-            .replace("{Y}", dt.strftime("%Y"))
-            .replace("{m}", dt.strftime("%m"))
-            .replace("{d}", dt.strftime("%d"))
-            .replace("{H}", dt.strftime("%H"))
-        )
-        if "{level}" in pattern:
-            result = result.replace("{level}", level)
-        return result
-
-    async def _search_file(self, path: Path, query: str, limit: int) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        try:
-            async with aiofiles.open(path, encoding="utf-8", errors="replace") as f:
-                async for line in f:
-                    if query not in line:
-                        continue
-                    try:
-                        entry = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if not isinstance(entry, dict):
-                        continue
-                    results.append(entry)
-                    if len(results) >= limit:
-                        break
-        except OSError:
-            pass
-        return results
+        response: dict[str, Any] = {"success": True, "results": results}
+        if truncated:
+            response["truncated"] = True
+            response["hint"] = (
+                f"Results capped at {_MAX_RESULTS}. "
+                "Use a more specific query to narrow results."
+            )
+        return response

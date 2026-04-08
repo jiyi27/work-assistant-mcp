@@ -7,24 +7,25 @@ from mcp.server.fastmcp import FastMCP
 from ...config import Settings
 from .service import LogSearchService
 from .strings import (
-    LIST_LOG_SERVICES_DESCRIPTION,
-    SEARCH_LOGS_DESCRIPTION,
-    TOOL_LIST_LOG_SERVICES,
-    TOOL_SEARCH_LOGS,
+    LIST_LOG_FILES_DESCRIPTION,
+    SEARCH_LOG_DESCRIPTION,
+    TOOL_LIST_LOG_FILES,
+    TOOL_SEARCH_LOG,
 )
 
 
 def register_log_search_tools(mcp: FastMCP, settings: Settings) -> None:
     svc = LogSearchService(settings.log_search)  # type: ignore[arg-type]
 
-    @mcp.tool(name=TOOL_SEARCH_LOGS, description=SEARCH_LOGS_DESCRIPTION)
-    async def search_logs(
-        service: Annotated[str, f"Service name to search. Call {TOOL_LIST_LOG_SERVICES} if you do not know the exact name."],
-        query: Annotated[str, "Substring to match against raw log lines, e.g. a requestId value, traceId, or topic name."],
-        limit: Annotated[int, "Maximum number of matching entries to return. Defaults to 10."] = 10,
+    @mcp.tool(name=TOOL_LIST_LOG_FILES, description=LIST_LOG_FILES_DESCRIPTION)
+    def list_log_files(
+        path: Annotated[str, "Path relative to the log base directory. Use empty string to list the log root."] = "",
     ) -> dict[str, Any]:
-        return await svc.search(service, query, limit)
+        return svc.list_files(path)
 
-    @mcp.tool(name=TOOL_LIST_LOG_SERVICES, description=LIST_LOG_SERVICES_DESCRIPTION)
-    async def list_log_services() -> dict[str, Any]:
-        return await svc.list_services()
+    @mcp.tool(name=TOOL_SEARCH_LOG, description=SEARCH_LOG_DESCRIPTION)
+    async def search_log(
+        file_path: Annotated[str, f"Path to the log file relative to the log base directory. Obtained from the path field in {TOOL_LIST_LOG_FILES} results."],
+        query: Annotated[str, "Substring to match against log lines. Case-sensitive."],
+    ) -> dict[str, Any]:
+        return await svc.search(file_path, query)
