@@ -25,10 +25,9 @@ such as a request ID, trace ID, error message, or status code.
 
 # Hints returned inside tool responses to guide the calling agent.
 HINT_LIST_LOG_FILES_SUCCESS = (
-    f"The result shows one level of the log directory tree for the returned path, capped at "
-    f"{MAX_LISTED_ENTRIES} entries sorted by most recently modified. Older entries may not appear. "
-    f"Continue calling {TOOL_LIST_LOG_FILES} with a directory path to drill down. "
-    f"Use {TOOL_SEARCH_LOG} only after you identify a file to search."
+    f"Results are capped at {MAX_LISTED_ENTRIES} entries, sorted by most recently modified — "
+    f"older entries may not appear. To drill into a subdirectory, pass its entry's `path` field "
+    f"to {TOOL_LIST_LOG_FILES}."
 )
 
 HINT_PATH_OUTSIDE_BASE = (
@@ -56,6 +55,13 @@ HINT_FILE_NOT_FOUND = (
     f"format and can be passed directly. "
     f"Call {TOOL_LIST_LOG_FILES} with path=\"\" to browse from the log root and confirm the "
     f"correct file path."
+)
+
+HINT_LIST_PATH_NOT_FOUND = (
+    f"Verify the path is correct. Paths passed to {TOOL_LIST_LOG_FILES} must be relative to the "
+    f"log root — do not use absolute paths or guess paths manually. Call {TOOL_LIST_LOG_FILES} "
+    f"with path=\"\" to browse from the log root, then pass the returned directory `path` value "
+    f"directly."
 )
 
 HINT_TRUNCATED = (

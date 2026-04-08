@@ -10,5 +10,5 @@ MAX_RESULTS = 10
 CONTEXT_LINES = 3
 
 # Files larger than this (bytes) are rejected to avoid loading them fully into memory.
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 MAX_FILE_SIZE_MB = MAX_FILE_SIZE_BYTES // (1024 * 1024)

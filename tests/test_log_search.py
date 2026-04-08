@@ -55,10 +55,9 @@ def test_list_log_files_lists_root_when_path_omitted(tmp_path: Path) -> None:
     assert structured["path"] == ""
     assert [entry["name"] for entry in structured["entries"]] == ["worker", "api"]
     assert structured["hint"] == (
-        "The result shows one level of the log directory tree for the returned path, capped at 10 "
-        "entries sorted by most recently modified. Older entries may not appear. "
-        "Continue calling list_log_files with a directory path to drill down. "
-        "Use search_log only after you identify a file to search."
+        "Results are capped at 10 entries, sorted by most recently modified — "
+        "older entries may not appear. To drill into a subdirectory, pass its entry's `path` field "
+        "to list_log_files."
     )
 
 
@@ -73,6 +72,25 @@ def test_list_log_files_rejects_path_traversal(tmp_path: Path) -> None:
         "success": False,
         "error_type": "path_outside_base",
         "hint": "The path resolves outside the configured log directory. Stop and tell the user in your reply.",
+    }
+
+
+def test_list_log_files_returns_path_rules_when_path_not_found(tmp_path: Path) -> None:
+    mcp = create_mcp(_make_settings(tmp_path))
+
+    _, structured = asyncio.run(
+        mcp.call_tool("list_log_files", {"path": "api/missing"})
+    )
+
+    assert structured == {
+        "success": False,
+        "error_type": "path_not_found",
+        "hint": (
+            "Path 'api/missing' does not exist. Verify the path is correct. Paths passed to "
+            "list_log_files must be relative to the log root — do not use absolute paths or "
+            "guess paths manually. Call list_log_files with path=\"\" to browse from the log "
+            "root, then pass the returned directory `path` value directly."
+        ),
     }
 
 

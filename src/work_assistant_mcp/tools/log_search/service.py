@@ -12,6 +12,7 @@ from .constants import CONTEXT_LINES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB, MAX
 from .strings import (
     HINT_FILE_NOT_FOUND,
     HINT_LIST_LOG_FILES_SUCCESS,
+    HINT_LIST_PATH_NOT_FOUND,
     HINT_NO_RESULTS,
     HINT_PATH_OUTSIDE_BASE,
     HINT_TRUNCATED,
@@ -53,10 +54,7 @@ class LogSearchService:
             return {
                 "success": False,
                 "error_type": "path_not_found",
-                "hint": (
-                    f"Path '{relative or '.'}' does not exist. "
-                    f"Call {TOOL_LIST_LOG_FILES} with an existing directory path."
-                ),
+                "hint": f"Path '{relative or '.'}' does not exist. {HINT_LIST_PATH_NOT_FOUND}",
             }
         if not target.is_dir():
             return {
