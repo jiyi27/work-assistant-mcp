@@ -26,6 +26,6 @@ def register_log_search_tools(mcp: FastMCP, settings: Settings) -> None:
     @mcp.tool(name=TOOL_SEARCH_LOG, description=SEARCH_LOG_DESCRIPTION)
     async def search_log(
         file_path: Annotated[str, f"Path to the log file relative to the log base directory. Obtained from the path field in {TOOL_LIST_LOG_FILES} results."],
-        query: Annotated[str, "Substring to match against log lines. Case-sensitive."],
+        query: Annotated[str, "Substring to match against log lines. Case-insensitive."],
     ) -> dict[str, Any]:
         return await svc.search(file_path, query)

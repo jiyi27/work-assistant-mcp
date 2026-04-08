@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 from work_assistant_mcp.config import LogSearchSettings, ServerSettings, Settings
 from work_assistant_mcp.server import create_mcp
+from work_assistant_mcp.tools.log_search.constants import MAX_FILE_SIZE_BYTES, MAX_RESULTS
 
 _DEFAULT_SERVER = ServerSettings(transport="stdio", host=None, port=None)
 
@@ -39,17 +41,22 @@ def _make_settings(tmp_path: Path, **overrides: object) -> Settings:
 
 def test_list_log_files_lists_root_when_path_omitted(tmp_path: Path) -> None:
     root = tmp_path / "services"
-    (root / "api").mkdir(parents=True)
-    (root / "worker").mkdir(parents=True)
+    api_dir = root / "api"
+    worker_dir = root / "worker"
+    api_dir.mkdir(parents=True)
+    worker_dir.mkdir(parents=True)
+    os.utime(api_dir, (1_700_000_000, 1_700_000_000))
+    os.utime(worker_dir, (1_700_000_100, 1_700_000_100))
     mcp = create_mcp(_make_settings(tmp_path))
 
     _, structured = asyncio.run(mcp.call_tool("list_log_files", {}))
 
     assert structured["success"] is True
     assert structured["path"] == ""
-    assert [entry["name"] for entry in structured["entries"]] == ["api", "worker"]
+    assert [entry["name"] for entry in structured["entries"]] == ["worker", "api"]
     assert structured["hint"] == (
-        "The result shows one level of the log directory tree for the returned path. "
+        "The result shows one level of the log directory tree for the returned path, capped at 10 "
+        "entries sorted by most recently modified. Older entries may not appear. "
         "Continue calling list_log_files with a directory path to drill down. "
         "Use search_log only after you identify a file to search."
     )
@@ -69,13 +76,18 @@ def test_list_log_files_rejects_path_traversal(tmp_path: Path) -> None:
     }
 
 
-def test_list_log_files_returns_entries_with_path_and_limits_files(tmp_path: Path) -> None:
+def test_list_log_files_returns_entries_with_path_and_limits_total_entries(tmp_path: Path) -> None:
     service_dir = tmp_path / "services" / "api" / "2026-04-08"
     service_dir.mkdir(parents=True)
+    older_dir = tmp_path / "services" / "api" / "2026-04-07"
+    older_dir.mkdir(parents=True)
     for index in range(12):
         file_path = service_dir / f"app-{index:02d}.log"
         file_path.write_text("log line\n", encoding="utf-8")
-        file_path.touch()
+        timestamp = 1_700_000_000 + index
+        os.utime(file_path, (timestamp, timestamp))
+    older_timestamp = 1_600_000_000
+    os.utime(older_dir, (older_timestamp, older_timestamp))
     mcp = create_mcp(_make_settings(tmp_path))
 
     _, structured = asyncio.run(
@@ -84,11 +96,10 @@ def test_list_log_files_returns_entries_with_path_and_limits_files(tmp_path: Pat
 
     assert structured["success"] is True
     assert structured["path"] == "api"
-    names = [e["name"] for e in structured["entries"]]
-    assert "2026-04-08" in names
-    dir_entry = next(e for e in structured["entries"] if e["name"] == "2026-04-08")
-    assert dir_entry["type"] == "dir"
-    assert dir_entry["path"] == "api/2026-04-08"
+    assert [entry["name"] for entry in structured["entries"]] == ["2026-04-08", "2026-04-07"]
+    assert structured["entries"][0]["type"] == "dir"
+    assert structured["entries"][0]["path"] == "api/2026-04-08"
+    assert "mtime" in structured["entries"][0]
 
     _, nested = asyncio.run(
         mcp.call_tool("list_log_files", {"path": "api/2026-04-08"})
@@ -99,6 +110,7 @@ def test_list_log_files_returns_entries_with_path_and_limits_files(tmp_path: Pat
     assert len(nested["entries"]) == 10
     assert all(entry["type"] == "file" for entry in nested["entries"])
     assert nested["entries"][0]["name"] == "app-11.log"
+    assert nested["entries"][-1]["name"] == "app-02.log"
 
 
 # --- search_log ---
@@ -169,5 +181,72 @@ def test_search_log_returns_matching_lines_with_context(tmp_path: Path) -> None:
     result = structured["results"][0]
     assert result["line_no"] == 3
     assert "trace-123" in result["match"]
-    assert "line two" in result["pre_context"]
-    assert "line four" in result["post_context"]
+    assert result["pre_context"] == ["line one", "line two"]
+    assert result["post_context"] == ["line four", "line five"]
+
+
+def test_search_log_returns_most_recent_matches_first_then_sorts_output(tmp_path: Path) -> None:
+    log_dir = tmp_path / "services" / "api"
+    log_dir.mkdir(parents=True)
+    lines = [
+        "trace-123 first",
+        "middle one",
+        "trace-123 second",
+        "middle two",
+        "trace-123 third",
+    ]
+    (log_dir / "app.log").write_text("\n".join(lines), encoding="utf-8")
+    mcp = create_mcp(_make_settings(tmp_path))
+
+    _, structured = asyncio.run(
+        mcp.call_tool("search_log", {"file_path": "api/app.log", "query": "TRACE-123"})
+    )
+
+    assert structured["success"] is True
+    assert [result["line_no"] for result in structured["results"]] == [1, 3, 5]
+    assert structured["results"][-1]["pre_context"] == ["middle one", "trace-123 second", "middle two"]
+    assert structured["results"][0]["post_context"] == ["middle one", "trace-123 second", "middle two"]
+
+
+def test_search_log_truncates_to_most_recent_matches(tmp_path: Path) -> None:
+    log_dir = tmp_path / "services" / "api"
+    log_dir.mkdir(parents=True)
+    lines = [f"trace-123 line {index}" for index in range(MAX_RESULTS + 2)]
+    (log_dir / "app.log").write_text("\n".join(lines), encoding="utf-8")
+    mcp = create_mcp(_make_settings(tmp_path))
+
+    _, structured = asyncio.run(
+        mcp.call_tool("search_log", {"file_path": "api/app.log", "query": "trace-123"})
+    )
+
+    assert structured["success"] is True
+    assert structured["truncated"] is True
+    assert len(structured["results"]) == MAX_RESULTS
+    assert [result["line_no"] for result in structured["results"]] == list(range(3, MAX_RESULTS + 3))
+    assert structured["hint"] == (
+        "Showing the 10 most recent matches. Older occurrences may exist but are not shown. "
+        "Use a more specific query to narrow results. If completeness is critical, inform the user "
+        "that this tool may not have captured all matches."
+    )
+
+
+def test_search_log_rejects_file_that_is_too_large(tmp_path: Path) -> None:
+    log_dir = tmp_path / "services" / "api"
+    log_dir.mkdir(parents=True)
+    oversized = log_dir / "app.log"
+    with oversized.open("wb") as file_obj:
+        file_obj.truncate(MAX_FILE_SIZE_BYTES + 1)
+    mcp = create_mcp(_make_settings(tmp_path))
+
+    _, structured = asyncio.run(
+        mcp.call_tool("search_log", {"file_path": "api/app.log", "query": "trace-123"})
+    )
+
+    assert structured == {
+        "success": False,
+        "error_type": "file_too_large",
+        "hint": (
+            "This file exceeds the tool's size limit (50 MB) and cannot be searched directly. "
+            "Notify the user — they may need to search the file outside this tool (e.g. grep on the server)."
+        ),
+    }

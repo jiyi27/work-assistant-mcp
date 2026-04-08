@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ...hints import STOP_AND_NOTIFY_USER_INSTRUCTION
+from .constants import MAX_FILE_SIZE_MB, MAX_LISTED_ENTRIES, MAX_RESULTS
 
 # Tool names — single source of truth used in registrations and cross-tool hints.
 TOOL_LIST_LOG_FILES = "list_log_files"
@@ -24,7 +25,8 @@ such as a request ID, trace ID, error message, or status code.
 
 # Hints returned inside tool responses to guide the calling agent.
 HINT_LIST_LOG_FILES_SUCCESS = (
-    f"The result shows one level of the log directory tree for the returned path. "
+    f"The result shows one level of the log directory tree for the returned path, capped at "
+    f"{MAX_LISTED_ENTRIES} entries sorted by most recently modified. Older entries may not appear. "
     f"Continue calling {TOOL_LIST_LOG_FILES} with a directory path to drill down. "
     f"Use {TOOL_SEARCH_LOG} only after you identify a file to search."
 )
@@ -55,3 +57,16 @@ HINT_FILE_NOT_FOUND = (
     f"Call {TOOL_LIST_LOG_FILES} with path=\"\" to browse from the log root and confirm the "
     f"correct file path."
 )
+
+HINT_TRUNCATED = (
+    f"Showing the {MAX_RESULTS} most recent matches. Older occurrences may exist but are not shown. "
+    f"Use a more specific query to narrow results. If completeness is critical, inform the user "
+    f"that this tool may not have captured all matches."
+)
+
+
+def file_too_large_hint(limit_mb: int = MAX_FILE_SIZE_MB) -> str:
+    return (
+        f"This file exceeds the tool's size limit ({limit_mb} MB) and cannot be searched directly. "
+        "Notify the user — they may need to search the file outside this tool (e.g. grep on the server)."
+    )

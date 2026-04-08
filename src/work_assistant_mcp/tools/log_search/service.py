@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,21 +8,17 @@ import aiofiles
 
 from ...config import LogSearchSettings
 from ...hints import required_param_hint
+from .constants import CONTEXT_LINES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB, MAX_LISTED_ENTRIES, MAX_RESULTS
 from .strings import (
     HINT_FILE_NOT_FOUND,
     HINT_LIST_LOG_FILES_SUCCESS,
     HINT_NO_RESULTS,
     HINT_PATH_OUTSIDE_BASE,
+    HINT_TRUNCATED,
     TOOL_LIST_LOG_FILES,
     TOOL_SEARCH_LOG,
+    file_too_large_hint,
 )
-
-# Maximum matching lines returned per search call; results beyond this are truncated.
-_MAX_RESULTS = 5
-# Number of lines captured before and after each matching line as context.
-_CONTEXT_LINES = 1
-# Maximum number of files shown per directory listing (directories are not capped).
-_MAX_LISTED_FILES = 10
 
 
 class LogSearchService:
@@ -73,28 +68,24 @@ class LogSearchService:
                 ),
             }
 
-        dirs: list[dict[str, Any]] = []
-        files: list[tuple[float, dict[str, Any]]] = []
+        entries_with_mtime: list[tuple[float, dict[str, Any]]] = []
         for child in target.iterdir():
             rel = str(child.relative_to(self._base))
+            stat = child.stat()
+            entry: dict[str, Any] = {
+                "name": child.name,
+                "path": rel,
+                "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            }
             if child.is_dir():
-                dirs.append({"name": child.name, "type": "dir", "path": rel})
+                entry["type"] = "dir"
             else:
-                stat = child.stat()
-                files.append((
-                    stat.st_mtime,
-                    {
-                        "name": child.name,
-                        "type": "file",
-                        "path": rel,
-                        "size_kb": round(stat.st_size / 1024, 1),
-                        "mtime": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-                    },
-                ))
+                entry["type"] = "file"
+                entry["size_kb"] = round(stat.st_size / 1024, 1)
+            entries_with_mtime.append((stat.st_mtime, entry))
 
-        dirs.sort(key=lambda entry: entry["name"])
-        files.sort(key=lambda item: (-item[0], item[1]["name"]))
-        entries = dirs + [entry for _, entry in files[:_MAX_LISTED_FILES]]
+        entries_with_mtime.sort(key=lambda item: (-item[0], item[1]["name"]))
+        entries = [entry for _, entry in entries_with_mtime[:MAX_LISTED_ENTRIES]]
 
         return {
             "success": True,
@@ -143,43 +134,34 @@ class LogSearchService:
                     f"Call {TOOL_LIST_LOG_FILES} to list its contents."
                 ),
             }
-
-        # Stream line by line — pre_buffer holds the sliding window of recent lines
-        # for pre-context; post_collectors accumulates post-context into each result.
-        pre_buffer: deque[str] = deque(maxlen=_CONTEXT_LINES)
-        results: list[dict[str, Any]] = []
-        # Each entry: (post_context_list, remaining_post_lines)
-        post_collectors: list[tuple[list[str], int]] = []
-        truncated = False
-        line_no = 0
+        file_size = target.stat().st_size
+        if file_size > MAX_FILE_SIZE_BYTES:
+            return {
+                "success": False,
+                "error_type": "file_too_large",
+                "hint": file_too_large_hint(MAX_FILE_SIZE_MB),
+            }
 
         async with aiofiles.open(target, encoding="utf-8", errors="replace") as f:
-            async for raw_line in f:
-                line_no += 1
-                line = raw_line.rstrip("\n")
+            lines = (await f.read()).splitlines()
 
-                # Feed line to any open post-context collectors
-                still_open = []
-                for post_ctx, remaining in post_collectors:
-                    post_ctx.append(line)
-                    if remaining > 1:
-                        still_open.append((post_ctx, remaining - 1))
-                post_collectors = still_open
+        lowered_query = query.lower()
+        results: list[dict[str, Any]] = []
+        truncated = False
+        for line_index in range(len(lines) - 1, -1, -1):
+            line = lines[line_index]
+            if lowered_query not in line.lower():
+                continue
+            if len(results) >= MAX_RESULTS:
+                truncated = True
+                break
 
-                if query.lower() in line.lower():
-                    if len(results) >= _MAX_RESULTS:
-                        truncated = True
-                        break
-                    post_context: list[str] = []
-                    results.append({
-                        "line_no": line_no,
-                        "match": line,
-                        "pre_context": list(pre_buffer),
-                        "post_context": post_context,
-                    })
-                    post_collectors.append((post_context, _CONTEXT_LINES))
-
-                pre_buffer.append(line)
+            results.append({
+                "line_no": line_index + 1,
+                "match": line,
+                "pre_context": lines[max(0, line_index - CONTEXT_LINES):line_index],
+                "post_context": lines[line_index + 1:line_index + 1 + CONTEXT_LINES],
+            })
 
         if not results:
             return {
@@ -188,11 +170,9 @@ class LogSearchService:
                 "hint": HINT_NO_RESULTS,
             }
 
+        results.sort(key=lambda item: item["line_no"])
         response: dict[str, Any] = {"success": True, "results": results}
         if truncated:
             response["truncated"] = True
-            response["hint"] = (
-                f"Results capped at {_MAX_RESULTS}. "
-                "Use a more specific query to narrow results."
-            )
+            response["hint"] = HINT_TRUNCATED
         return response
