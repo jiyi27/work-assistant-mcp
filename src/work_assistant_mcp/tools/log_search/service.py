@@ -143,7 +143,7 @@ class LogSearchService:
                 ),
             }
 
-        # P2: stream line by line — maintain a pre-context deque and mutate
+        # P2: streamline by line — maintain a pre-context deque and mutate
         # each result's context list in place to collect post-context lines.
         pre_buffer: deque[str] = deque(maxlen=_CONTEXT_LINES)
         results: list[dict[str, Any]] = []
