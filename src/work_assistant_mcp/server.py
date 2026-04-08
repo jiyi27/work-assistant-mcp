@@ -85,7 +85,10 @@ def main() -> None:
     configure_logger(log_dir=settings.log_dir, level=settings.log_level)
     mcp = create_mcp(settings)
     transport = settings.server.transport
-    if transport == "streamable-http":
-        mcp.run(transport="streamable-http")
-    else:
-        mcp.run()
+    try:
+        if transport == "streamable-http":
+            mcp.run(transport="streamable-http")
+        else:
+            mcp.run()
+    except KeyboardInterrupt:
+        pass
