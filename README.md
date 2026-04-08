@@ -8,6 +8,7 @@ Tools are grouped by plugin. Each plugin is enabled or disabled as a unit in `co
 | ----------- | ------------------------------------------------------------------- |
 | `dingtalk`  | `dingtalk_send_markdown`                                            |
 | `jira`      | `jira_get_latest_assigned_issue`, `jira_get_attachment_image`, `jira_start_issue`, `jira_resolve_issue` |
+| `log_search` | `list_log_files`, `search_log` |
 
 ## Configuration
 
@@ -77,6 +78,23 @@ jira:
 ```
 
 These must be **exact Jira status names** (not category names like `In Progress` or `Done`). If multiple transitions reach the same target status, the tool returns a `transition_ambiguous` error — rename statuses or adjust the workflow to resolve it.
+
+### Log Search
+
+Configure a log root directory that the tools can browse and search.
+
+```yaml
+plugins:
+  enabled:
+    - log_search
+
+  log_search:
+    log_base_dir: /absolute/path/to/logs
+```
+
+- `list_log_files` lists one level of files and directories under the log root or a relative path.
+- `search_log` searches a single file selected from `list_log_files`.
+- `log_base_dir` should point to the top-level directory that contains your service, date, or instance log folders.
 
 ### Other `config.yaml` settings
 
