@@ -1,16 +1,3 @@
-server:
-  # Required. Selects how the MCP server is exposed.
-  # Use `stdio` for local agent launches. Use `streamable-http` when serving over HTTP.
-  transport: stdio
-  # Optional. Only used when `server.transport` is `streamable-http`.
-#  host: 0.0.0.0
-  # Optional. Only used when `server.transport` is `streamable-http`.
-#  port: 8182
-  # Optional. MCP server display name shown to clients.
-  name: work-mcp
-  # Optional. High-level instructions exposed to MCP clients for this server.
-  instructions: "A work assistant MCP server providing tools for work-related tasks."
-
 logging:
   # Optional. Directory where structured JSONL logs are written.
   dir: logs

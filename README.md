@@ -17,6 +17,7 @@ Configuration is intentionally split by sensitivity, not by override priority.
 - `.env` contains sensitive credentials only.
 - `config.yaml` contains non-sensitive behavior and plugin settings only.
 - A single setting should be defined in one place only. This project does not use environment variables to override `config.yaml`.
+- Server startup mode is not stored in `config.yaml`. The packaged command defaults to `stdio`; use CLI flags or `make` targets when you want HTTP.
 
 To disable a plugin and all its tools, comment out its name in `plugins.enabled` in `config.yaml`.
 
@@ -103,26 +104,13 @@ log_search:
 ### Other `config.yaml` settings
 
 ```yaml
-server:
-  name: work-mcp
-  instructions: "A work-focused MCP server with notification tools for local agents."
-
 logging:
   dir: logs
   level: info   # debug | info | warning | error
 ```
 
-- `server.transport` is required.
-- `server.host` and `server.port` are only required when `server.transport` is `streamable-http`.
-- `server.name` and `server.instructions` are optional metadata for MCP clients.
 - `logging.dir` is optional and defaults to `logs`.
 - `logging.level` is optional and must be one of `debug`, `info`, `warning`, or `error`.
-
-CLI flags still override server binding for the current process only:
-
-```bash
-uv run work-mcp --transport streamable-http --host 0.0.0.0 --port 8182
-```
 
 ## Adding a New Tool
 
@@ -150,13 +138,35 @@ Point your MCP client or agent at the packaged entry point:
 
 If your MCP client starts servers from the current repository root, `cwd` can usually be omitted.
 
+This launches the server over `stdio`, which is the default MCP setup for local agents.
+
 ## Run
 
 ```bash
 uv run work-mcp
 ```
 
-Run in HTTP mode with the values defined in `config.yaml`, or pass CLI flags for a one-off override. `make run` uses CLI flags to start HTTP mode without editing your checked-in config.
+This starts the server over `stdio`.
+
+Run in HTTP mode:
+
+```bash
+make run
+```
+
+Override the bind address or port when needed:
+
+```bash
+make run HOST=0.0.0.0 PORT=9000
+```
+
+Or call the entry point directly:
+
+```bash
+uv run work-mcp --transport streamable-http --host 0.0.0.0 --port 8182
+```
+
+For an agent or MCP client that connects over HTTP, point it at the running server's `/mcp` endpoint, for example `http://127.0.0.1:8182/mcp`.
 
 ## Validate Locally
 

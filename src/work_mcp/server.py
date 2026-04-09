@@ -9,7 +9,8 @@ from typing import Any, Callable
 from mcp.server.fastmcp import FastMCP
 
 from .config import (
-    ALLOWED_TRANSPORTS,
+    DEFAULT_HTTP_HOST,
+    DEFAULT_HTTP_PORT,
     ServerSettings,
     Settings,
     get_settings,
@@ -17,6 +18,8 @@ from .config import (
 )
 from .logger import configure as configure_logger, info, error
 from .tools import PLUGIN_REGISTRY
+
+ALLOWED_TRANSPORTS = frozenset({"stdio", "streamable-http"})
 
 
 # AOP-style cross-cutting concern: intercept every tool call to inject structured logging.
@@ -54,11 +57,7 @@ def create_mcp(settings: Settings) -> FastMCP:
         if settings.server.transport == "streamable-http"
         else {}
     )
-    mcp = FastMCP(
-        name=settings.server_name,
-        instructions=settings.server_instructions,
-        **http_kwargs,
-    )
+    mcp = FastMCP(**http_kwargs)
     original_tool = mcp.tool
 
     # Replaces mcp.tool with a version that wraps each registered function with logging.
@@ -92,16 +91,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--transport",
         choices=sorted(ALLOWED_TRANSPORTS),
-        help="Override server.transport from config.yaml for this run.",
+        help="Select how the server is exposed for this run.",
     )
     parser.add_argument(
         "--host",
-        help="Override server.host from config.yaml for this run.",
+        help="Override the HTTP host for this run.",
     )
     parser.add_argument(
         "--port",
         type=int,
-        help="Override server.port from config.yaml for this run.",
+        help="Override the HTTP port for this run.",
     )
     return parser
 
@@ -118,7 +117,11 @@ def _apply_cli_overrides(
         if transport == "stdio":
             server = ServerSettings(transport=transport, host=None, port=None)
         else:
-            server = replace(server, transport=transport)
+            server = ServerSettings(
+                transport=transport,
+                host=DEFAULT_HTTP_HOST,
+                port=DEFAULT_HTTP_PORT,
+            )
     if host is not None:
         server = replace(server, host=host)
     if port is not None:

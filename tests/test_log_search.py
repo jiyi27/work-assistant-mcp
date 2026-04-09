@@ -21,8 +21,6 @@ def _make_settings(tmp_path: Path, **overrides: object) -> Settings:
         jira_project_key="IOS",
         log_dir=tmp_path / "logs",
         log_level="info",
-        server_name="work-mcp",
-        server_instructions="",
         enabled_plugins=("log_search",),
         jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",

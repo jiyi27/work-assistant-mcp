@@ -13,8 +13,6 @@ def test_get_settings_reads_top_level_log_search_config(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-server:
-  transport: stdio
 plugins:
   enabled:
     - log_search
@@ -38,8 +36,6 @@ def test_get_settings_requires_log_search_section_when_enabled(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-server:
-  transport: stdio
 plugins:
   enabled:
     - log_search
@@ -56,8 +52,6 @@ def test_get_settings_allows_jira_without_dingtalk(monkeypatch: pytest.MonkeyPat
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
 """
-server:
-  transport: stdio
 plugins:
   enabled:
     - jira
@@ -102,8 +96,6 @@ def test_get_settings_requires_jira_credentials_when_jira_enabled(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
 """
-server:
-  transport: stdio
 plugins:
   enabled:
     - jira
@@ -132,8 +124,6 @@ def test_get_settings_requires_plugins_section_to_be_a_mapping(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-server:
-  transport: stdio
 plugins:
   - jira
 jira:
@@ -157,8 +147,6 @@ def test_get_settings_requires_latest_assigned_statuses_when_jira_enabled(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-server:
-  transport: stdio
 plugins:
   enabled:
     - jira
@@ -194,8 +182,6 @@ def test_get_settings_reads_logging_values_from_yaml(
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-server:
-  transport: stdio
 plugins:
   enabled: []
 logging:
@@ -213,14 +199,54 @@ logging:
     assert settings.log_level == "warning"
 
 
+def test_get_settings_uses_stdio_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+plugins:
+  enabled: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    settings = config_module.get_settings()
+
+    assert settings.server.transport == "stdio"
+    assert settings.server.host is None
+    assert settings.server.port is None
+
+
+def test_get_settings_allows_missing_server_section(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+plugins:
+  enabled: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    settings = config_module.get_settings()
+
+    assert settings.server.transport == config_module.DEFAULT_TRANSPORT
+    assert settings.server.host is None
+    assert settings.server.port is None
+
+
 def test_get_settings_rejects_invalid_logging_section(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
-server:
-  transport: stdio
 plugins:
   enabled: []
 logging: logs

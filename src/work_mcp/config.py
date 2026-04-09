@@ -13,8 +13,9 @@ YAML_CONFIG_FILE = "config.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
 KNOWN_PLUGINS = frozenset({"dingtalk", "jira", "log_search"})
-ALLOWED_TRANSPORTS = frozenset({"stdio", "streamable-http"})
-DEFAULT_SERVER_NAME = "work-mcp"
+DEFAULT_TRANSPORT = "stdio"
+DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_PORT = 8000
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,6 @@ class Settings:
     # non-sensitive — loaded from config.yaml
     log_dir: Path
     log_level: str
-    server_name: str
-    server_instructions: str
     enabled_plugins: tuple[str, ...]
     jira_latest_assigned_statuses: tuple[str, ...]
     jira_start_target_status: str
@@ -86,29 +85,8 @@ def load_yaml_config(yaml_path: Path | None = None) -> dict[str, Any]:
         return yaml.safe_load(f) or {}
 
 
-def _read_server_settings(yaml_cfg: dict[str, Any]) -> ServerSettings:
-    yaml_server = yaml_cfg.get("server", {})
-    if not isinstance(yaml_server, dict):
-        raise RuntimeError("Invalid server section in config.yaml. Expected a mapping.")
-
-    transport = str(yaml_server.get("transport", "")).strip()
-    if not transport:
-        allowed = ", ".join(sorted(ALLOWED_TRANSPORTS))
-        raise RuntimeError(
-            f"server.transport is required in config.yaml. Allowed values: {allowed}"
-        )
-    if transport not in ALLOWED_TRANSPORTS:
-        allowed = ", ".join(sorted(ALLOWED_TRANSPORTS))
-        raise RuntimeError(
-            f"Invalid server.transport '{transport}' in config.yaml. Allowed values: {allowed}"
-        )
-
-    host_raw = yaml_server.get("host")
-    port_raw = yaml_server.get("port")
-    host = str(host_raw).strip() if host_raw is not None else None
-    port = int(port_raw) if port_raw is not None else None
-
-    return ServerSettings(transport=transport, host=host, port=port)
+def default_server_settings() -> ServerSettings:
+    return ServerSettings(transport=DEFAULT_TRANSPORT, host=None, port=None)
 
 
 def _read_enabled_plugins(yaml_cfg: dict[str, Any]) -> tuple[str, ...]:
@@ -153,17 +131,6 @@ def _read_log_search_settings(yaml_cfg: dict[str, Any]) -> LogSearchSettings | N
 
 def validate_settings(settings: Settings) -> None:
     errors: list[str] = []
-
-    # server transport validation
-    if settings.server.transport == "streamable-http":
-        if not settings.server.host:
-            errors.append(
-                "server: host is required when transport is streamable-http"
-            )
-        if settings.server.port is None:
-            errors.append(
-                "server: port is required when transport is streamable-http"
-            )
 
     if "dingtalk" in settings.enabled_plugins and not settings.dingtalk_webhook_url:
         errors.append(
@@ -216,7 +183,7 @@ def get_settings() -> Settings:
     load_env_file()
     yaml_cfg = load_yaml_config()
 
-    server = _read_server_settings(yaml_cfg)
+    server = default_server_settings()
     enabled_plugins = _read_enabled_plugins(yaml_cfg)
     log_search = _read_log_search_settings(yaml_cfg)
 
@@ -240,10 +207,6 @@ def get_settings() -> Settings:
             "Invalid logging.level in config.yaml. "
             f"Expected one of: {valid_levels}."
         )
-
-    yaml_server = yaml_cfg.get("server", {})
-    server_name = yaml_server.get("name", DEFAULT_SERVER_NAME)
-    server_instructions = yaml_server.get("instructions", "")
 
     yaml_jira = yaml_cfg.get("jira", {})
     if not isinstance(yaml_jira, dict):
@@ -274,8 +237,6 @@ def get_settings() -> Settings:
         jira_project_key=jira_project_key,
         log_dir=Path(log_dir_raw),
         log_level=log_level,
-        server_name=server_name,
-        server_instructions=server_instructions,
         enabled_plugins=enabled_plugins,
         jira_latest_assigned_statuses=jira_latest_assigned_statuses,
         jira_start_target_status=jira_start_target_status,

@@ -23,8 +23,6 @@ def _make_settings(**overrides: object) -> Settings:
         jira_project_key="IOS",
         log_dir=Path("logs"),
         log_level="info",
-        server_name="work-mcp",
-        server_instructions="",
         enabled_plugins=("jira",),
         jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",

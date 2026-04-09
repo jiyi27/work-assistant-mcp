@@ -26,8 +26,6 @@ def _make_settings(**overrides: object) -> Settings:
         jira_project_key="IOS",
         log_dir=Path("logs"),
         log_level="info",
-        server_name="work-mcp",
-        server_instructions="",
         enabled_plugins=("dingtalk",),
         jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
         jira_start_target_status="已接收",
@@ -77,8 +75,6 @@ def test_dingtalk_send_markdown_writes_success_log(tmp_path: Path) -> None:
             "os.environ",
             {
                 "DINGTALK_WEBHOOK_URL": "https://example.invalid/webhook",
-                "WORK_MCP_LOG_DIR": str(tmp_path),
-                "WORK_MCP_LOG_LEVEL": "info",
             },
             clear=False,
         ):
