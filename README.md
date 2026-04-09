@@ -8,7 +8,7 @@ Tools are grouped by plugin. Each plugin is enabled or disabled as a unit in `co
 | ----------- | ------------------------------------------------------------------- |
 | `database`  | `db_list_databases`, `db_list_tables`, `db_get_table_schema`, `db_execute_query` |
 | `dingtalk`  | `dingtalk_send_markdown`                                            |
-| `jira`      | `jira_get_latest_assigned_issue`, `jira_get_attachment_image`, `jira_start_issue`, `jira_resolve_issue` |
+| `jira`      | `jira_get_latest_assigned_issue`, `jira_start_issue`, `jira_resolve_issue` |
 | `log_search` | `list_log_files`, `search_log` |
 
 ## Configuration
@@ -143,6 +143,9 @@ jira:
 
 These must be **exact Jira status names** (not category names like `In Progress` or `Done`). If multiple transitions reach the same target status, the tool returns a `transition_ambiguous` error — rename statuses or adjust the workflow to resolve it.
 
+> **Note**
+> Jira image attachments are currently exposed as metadata only. Most MCP coding clients still operate as text-first chat workflows, and returning raw image bytes or base64 does not reliably trigger image understanding. In practice that mostly wastes context window, so this server surfaces attachment metadata and asks the agent to request a user summary when visual details may matter.
+
 ### Log Search
 
 Configure a log root directory that the tools can browse and search.
@@ -255,8 +258,6 @@ uv run python scripts/preview_tool.py call db_list_databases \
   --args '{}'
 
 
-uv run python scripts/preview_tool.py call jira_get_attachment_image \
-  --args '{"issue_key":"PAKISTAN-174","attachment_id":"24132"}'
 ```
 
 Run smoke tests:
