@@ -110,6 +110,7 @@ logging:
 ```
 
 - `logging.dir` is optional and defaults to `logs`.
+- Relative paths are resolved from the process working directory, so `logs` means `./logs` wherever you start the server. Absolute paths are allowed.
 - `logging.level` is optional and must be one of `debug`, `info`, `warning`, or `error`.
 
 ## Adding a New Tool

@@ -1,5 +1,6 @@
 logging:
-  # Optional. Directory where structured JSONL logs are written.
+  # Optional. Relative paths are resolved from the process working directory, so `logs` means `./logs`
+  # wherever you start the server. Absolute paths such as `/var/log/work-mcp` are also allowed.
   dir: logs
   # Optional. Minimum log severity to write. Allowed: debug, info, warning, error.
   level: info
