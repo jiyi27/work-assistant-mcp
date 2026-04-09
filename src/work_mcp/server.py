@@ -135,20 +135,22 @@ def _apply_cli_overrides(
 
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the MCP server."""
-    args = _build_parser().parse_args(argv)
-    settings = _apply_cli_overrides(
-        get_settings(),
-        transport=args.transport,
-        host=args.host,
-        port=args.port,
-    )
-    configure_logger(log_dir=settings.log_dir, level=settings.log_level)
-    mcp = create_mcp(settings)
-    transport = settings.server.transport
     try:
+        args = _build_parser().parse_args(argv)
+        settings = _apply_cli_overrides(
+            get_settings(),
+            transport=args.transport,
+            host=args.host,
+            port=args.port,
+        )
+        configure_logger(log_dir=settings.log_dir, level=settings.log_level)
+        mcp = create_mcp(settings)
+        transport = settings.server.transport
         if transport == "streamable-http":
             mcp.run(transport="streamable-http")
         else:
             mcp.run()
+    except RuntimeError as exc:
+        raise SystemExit(f"Error: {exc}") from None
     except KeyboardInterrupt:
         pass

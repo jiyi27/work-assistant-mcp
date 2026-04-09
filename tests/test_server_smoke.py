@@ -11,7 +11,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from work_mcp.config import ServerSettings, Settings
-from work_mcp.server import _apply_cli_overrides, create_mcp
+from work_mcp.server import _apply_cli_overrides, create_mcp, main
 
 _DEFAULT_SERVER = ServerSettings(transport="stdio", host=None, port=None)
 
@@ -223,3 +223,17 @@ def test_apply_cli_overrides_clears_network_binding_for_stdio() -> None:
         host=None,
         port=None,
     )
+
+
+def test_main_exits_cleanly_for_invalid_configuration(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "work_mcp.server.get_settings",
+        lambda: (_ for _ in ()).throw(RuntimeError("Invalid configuration for enabled plugins")),
+    )
+
+    try:
+        main([])
+    except SystemExit as exc:
+        assert exc.code == "Error: Invalid configuration for enabled plugins"
+    else:
+        raise AssertionError("Expected SystemExit")

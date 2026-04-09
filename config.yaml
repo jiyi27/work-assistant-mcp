@@ -8,8 +8,9 @@ logging:
 plugins:
   # Required. Enable plugins explicitly; only listed plugins register tools at startup.
   enabled:
-    - dingtalk
     - jira
+    - dingtalk
+    - database
     - log_search
 
 log_search:
