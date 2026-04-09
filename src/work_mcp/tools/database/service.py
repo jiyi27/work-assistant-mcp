@@ -15,6 +15,7 @@ from .factory import get_db_client
 from .security import ReadOnlyViolation, validate_read_only_query
 from .strings import (
     HINT_DATABASE_NOT_FOUND,
+    HINT_DATABASES_FOUND,
     HINT_NO_DATABASES,
     HINT_QUERY_ERROR,
     HINT_TABLE_NOT_FOUND,
@@ -41,6 +42,8 @@ class DatabaseService:
         response: dict[str, Any] = {"success": True, "databases": databases}
         if not databases:
             response["hint"] = HINT_NO_DATABASES
+        else:
+            response["hint"] = HINT_DATABASES_FOUND
         return response
 
     def list_tables(self, database: str) -> dict[str, Any]:

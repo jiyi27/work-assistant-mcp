@@ -14,24 +14,26 @@ QUERY_DEFAULT_LIMIT = 5
 QUERY_MAX_LIMIT = 50
 
 DB_LIST_DATABASES_DESCRIPTION = f"""\
-List databases visible to the configured SQL Server account.
+List all available databases.
 
-Use this first when you need to inspect live database data but do not yet know which
-database contains the relevant tables.
+Use this when the user reports a data issue — such as a missing record, unexpected
+behavior, or data mismatch — and you need to query the database to investigate.
+If you already know the target database name, skip this and call {TOOL_DB_LIST_TABLES}
+or {TOOL_DB_EXECUTE_QUERY} directly.
 """
 
 DB_LIST_TABLES_DESCRIPTION = f"""\
 List tables in a specific database.
 
-Use this after {TOOL_DB_LIST_DATABASES} to identify candidate tables before requesting
-schema details or running a query.
+Use this when you know the database name but are unsure which table holds the relevant
+data. You can also use it before running a query to confirm a table exists.
 """
 
 DB_GET_TABLE_SCHEMA_DESCRIPTION = f"""\
 Return the column definitions for a database table.
 
-Use this before writing a query so you can confirm the available columns, data types,
-nullability, and primary-key fields.
+Use this when you are unsure of the exact column names or data types before writing a
+query. Confirms available columns, data types, nullability, and primary-key fields.
 """
 
 DB_EXECUTE_QUERY_DESCRIPTION = f"""\
@@ -64,6 +66,11 @@ HINT_QUERY_ERROR = (
     f"The query failed. Call {TOOL_DB_GET_TABLE_SCHEMA} to verify table and column names, "
     "then retry with a corrected SELECT statement. "
     "Retry at most once; if still failing, stop and tell the user the error message above."
+)
+
+HINT_DATABASES_FOUND = (
+    f"You now know which databases are available. Proceed with {TOOL_DB_LIST_TABLES} "
+    f"or {TOOL_DB_EXECUTE_QUERY} directly — do not call {TOOL_DB_LIST_DATABASES} again."
 )
 
 HINT_NO_DATABASES = (
