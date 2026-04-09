@@ -258,3 +258,77 @@ logging: logs
 
     with pytest.raises(RuntimeError, match="Invalid logging section"):
         config_module.get_settings()
+
+
+def test_get_settings_reads_database_env_when_database_plugin_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+plugins:
+  enabled:
+    - database
+""".strip(),
+        encoding="utf-8",
+    )
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "DB_TYPE=sqlserver",
+                "DB_HOST=db.example.internal",
+                "DB_PORT=1444",
+                "DB_USER=readonly_user",
+                "DB_PASSWORD=secret",
+                "DB_NAME=master",
+                "DB_DRIVER=ODBC Driver 18 for SQL Server",
+                "DB_TRUST_SERVER_CERTIFICATE=true",
+                "DB_CONNECT_TIMEOUT_SECONDS=9",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    settings = config_module.get_settings()
+
+    assert settings.enabled_plugins == ("database",)
+    assert settings.database is not None
+    assert settings.database.host == "db.example.internal"
+    assert settings.database.port == 1444
+    assert settings.database.user == "readonly_user"
+    assert settings.database.password == "secret"
+    assert settings.database.default_database == "master"
+    assert settings.database.trust_server_certificate is True
+    assert settings.database.connect_timeout_seconds == 9
+
+
+def test_get_settings_requires_database_env_when_database_plugin_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+plugins:
+  enabled:
+    - database
+    """.strip(),
+        encoding="utf-8",
+    )
+    for env_name in (
+        "DB_TYPE",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_DRIVER",
+        "DB_TRUST_SERVER_CERTIFICATE",
+        "DB_CONNECT_TIMEOUT_SECONDS",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    with pytest.raises(RuntimeError, match="missing DB_HOST"):
+        config_module.get_settings()

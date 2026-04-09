@@ -12,10 +12,13 @@ ENV_FILE_NAME = ".env"
 YAML_CONFIG_FILE = "config.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
-KNOWN_PLUGINS = frozenset({"dingtalk", "jira", "log_search"})
+KNOWN_PLUGINS = frozenset({"database", "dingtalk", "jira", "log_search"})
 DEFAULT_TRANSPORT = "stdio"
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8000
+DEFAULT_DB_PORT = 1433
+DEFAULT_DB_DRIVER = "ODBC Driver 18 for SQL Server"
+DEFAULT_DB_CONNECT_TIMEOUT_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,19 @@ class ServerSettings:
 @dataclass(frozen=True)
 class LogSearchSettings:
     log_base_dir: str
+
+
+@dataclass(frozen=True)
+class DatabaseSettings:
+    db_type: str
+    host: str
+    port: int
+    user: str
+    password: str
+    default_database: str
+    driver: str
+    trust_server_certificate: bool
+    connect_timeout_seconds: int
 
 
 @dataclass(frozen=True)
@@ -50,6 +66,7 @@ class Settings:
     jira_attachment_max_images: int
     jira_attachment_max_bytes: int
     log_search: LogSearchSettings | None
+    database: DatabaseSettings | None = None
 
 
 def load_env_file(env_path: Path | None = None) -> None:
@@ -129,6 +146,32 @@ def _read_log_search_settings(yaml_cfg: dict[str, Any]) -> LogSearchSettings | N
     )
 
 
+def _read_bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(
+        f"Invalid {name} in environment or .env. Expected true/false."
+    )
+
+
+def _read_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value.strip())
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Invalid {name} in environment or .env. Expected an integer."
+        ) from exc
+
+
 def validate_settings(settings: Settings) -> None:
     errors: list[str] = []
 
@@ -174,6 +217,31 @@ def validate_settings(settings: Settings) -> None:
                     "log_search: missing log_search.log_base_dir in config.yaml"
                 )
 
+    if "database" in settings.enabled_plugins:
+        if settings.database is None:
+            errors.append("database: missing database settings in environment or .env")
+        else:
+            if settings.database.db_type != "sqlserver":
+                errors.append(
+                    "database: DB_TYPE must be one of the supported values: sqlserver"
+                )
+            if not settings.database.host:
+                errors.append("database: missing DB_HOST in environment or .env")
+            if not settings.database.user:
+                errors.append("database: missing DB_USER in environment or .env")
+            if not settings.database.password:
+                errors.append("database: missing DB_PASSWORD in environment or .env")
+            if not settings.database.default_database:
+                errors.append("database: missing DB_NAME in environment or .env")
+            if not settings.database.driver:
+                errors.append("database: missing DB_DRIVER in environment or .env")
+            if settings.database.port <= 0:
+                errors.append("database: DB_PORT must be greater than 0")
+            if settings.database.connect_timeout_seconds <= 0:
+                errors.append(
+                    "database: DB_CONNECT_TIMEOUT_SECONDS must be greater than 0"
+                )
+
     if errors:
         lines = "\n".join(f"- {item}" for item in errors)
         raise RuntimeError(f"Invalid configuration for enabled plugins:\n{lines}")
@@ -194,6 +262,22 @@ def get_settings() -> Settings:
     jira_base_url = os.getenv("JIRA_BASE_URL", "").strip() or None
     jira_api_token = os.getenv("JIRA_API_TOKEN", "").strip() or None
     jira_project_key = os.getenv("JIRA_PROJECT_KEY", "").strip() or None
+    database = DatabaseSettings(
+        db_type=os.getenv("DB_TYPE", "").strip().lower(),
+        host=os.getenv("DB_HOST", "").strip(),
+        port=_read_int_env("DB_PORT", DEFAULT_DB_PORT),
+        user=os.getenv("DB_USER", "").strip(),
+        password=os.getenv("DB_PASSWORD", "").strip(),
+        default_database=os.getenv("DB_NAME", "").strip(),
+        driver=os.getenv("DB_DRIVER", DEFAULT_DB_DRIVER).strip(),
+        trust_server_certificate=_read_bool_env(
+            "DB_TRUST_SERVER_CERTIFICATE", False
+        ),
+        connect_timeout_seconds=_read_int_env(
+            "DB_CONNECT_TIMEOUT_SECONDS",
+            DEFAULT_DB_CONNECT_TIMEOUT_SECONDS,
+        ),
+    )
 
     # non-sensitive values — only from config.yaml
     yaml_logging = yaml_cfg.get("logging", {})
@@ -244,6 +328,7 @@ def get_settings() -> Settings:
         jira_attachment_max_images=jira_attachment_max_images,
         jira_attachment_max_bytes=jira_attachment_max_bytes,
         log_search=log_search,
+        database=database,
     )
     validate_settings(settings)
     return settings

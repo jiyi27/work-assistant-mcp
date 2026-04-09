@@ -6,6 +6,7 @@ Tools are grouped by plugin. Each plugin is enabled or disabled as a unit in `co
 
 | Plugin | Tools                                                                    |
 | ----------- | ------------------------------------------------------------------- |
+| `database`  | `db_list_databases`, `db_list_tables`, `db_get_table_schema`, `db_execute_query` |
 | `dingtalk`  | `dingtalk_send_markdown`                                            |
 | `jira`      | `jira_get_latest_assigned_issue`, `jira_get_attachment_image`, `jira_start_issue`, `jira_resolve_issue` |
 | `log_search` | `list_log_files`, `search_log` |
@@ -20,6 +21,46 @@ Configuration is intentionally split by sensitivity, not by override priority.
 - Server startup mode is not stored in `config.yaml`. The packaged command defaults to `stdio`; use CLI flags or `make` targets when you want HTTP.
 
 To disable a plugin and all its tools, comment out its name in `plugins.enabled` in `config.yaml`.
+
+### Database
+
+Configure a read-only SQL Server account for live debugging queries.
+
+**1. Set credentials in `.env`:**
+
+```env
+DB_TYPE=sqlserver
+DB_HOST=your-sqlserver-host.example.com
+DB_PORT=1433
+DB_USER=readonly_user
+DB_PASSWORD=your_password_here
+DB_NAME=master
+DB_DRIVER=ODBC Driver 18 for SQL Server
+DB_TRUST_SERVER_CERTIFICATE=false
+DB_CONNECT_TIMEOUT_SECONDS=5
+```
+
+- `DB_USER` must be a read-only database account. Tool-layer SQL validation is only defense in depth and is not the primary safety boundary.
+- `DB_NAME` is the default database used for connection bootstrap. The tools can still inspect other visible databases.
+- `DB_DRIVER` must match an installed ODBC driver on the host machine. For SQL Server, install the Microsoft ODBC Driver first.
+- `DB_TRUST_SERVER_CERTIFICATE=true` is only appropriate for environments where you intentionally bypass certificate validation.
+
+**2. Enable in `config.yaml`:**
+
+```yaml
+plugins:
+  enabled:
+    - database
+```
+
+**3. Use the tools in this order when exploring data:**
+
+- `db_list_databases`
+- `db_list_tables`
+- `db_get_table_schema`
+- `db_execute_query`
+
+`db_execute_query` only accepts a single `SELECT` statement and caps returned rows.
 
 ### DingTalk
 
@@ -191,6 +232,10 @@ Call one tool:
 uv run python scripts/preview_tool.py call dingtalk_send_markdown \
   --args '{"title":"Smoke Test","markdown":"hello from local preview"}'
   
+
+uv run python scripts/preview_tool.py call db_list_databases \
+  --args '{}'
+
 
 uv run python scripts/preview_tool.py call jira_get_attachment_image \
   --args '{"issue_key":"PAKISTAN-174","attachment_id":"24132"}'

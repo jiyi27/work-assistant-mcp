@@ -33,6 +33,7 @@ def _make_settings(**overrides: object) -> Settings:
         jira_attachment_max_images=5,
         jira_attachment_max_bytes=1_048_576,
         log_search=None,
+        database=None,
     )
     defaults.update(overrides)
     return Settings(**defaults)  # type: ignore[arg-type]
