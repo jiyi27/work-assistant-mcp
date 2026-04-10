@@ -1,8 +1,8 @@
 # =============================================================================
 # config.example.yaml — work-mcp configuration reference
 #
-# Copy this file to config.yaml and modify as needed.
-# Sensitive credentials (passwords, tokens) go in .env, not here.
+# Copy this file to config.yaml and fill in your values.
+# config.yaml is gitignored; never commit it.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -62,9 +62,20 @@ log_search:
 
 
 # -----------------------------------------------------------------------------
+# Plugin: dingtalk
+# Required: plugins.enabled contains "dingtalk"
+# -----------------------------------------------------------------------------
+dingtalk:
+  # Required: DingTalk robot webhook URL
+  webhook_url: https://oapi.dingtalk.com/robot/send?access_token=your_token_here
+
+  # Optional: robot signing secret, only needed when "加签" is enabled on the robot
+  secret: SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+# -----------------------------------------------------------------------------
 # Plugin: jira
 # Required: plugins.enabled contains "jira"
-# Credentials (JIRA_BASE_URL / JIRA_API_TOKEN / JIRA_PROJECT_KEY) go in .env.
 #
 # Status names must match exactly what is defined in the Jira workflow
 # (the status name, not the category name).
@@ -72,6 +83,15 @@ log_search:
 #   uv run python scripts/inspect_jira_issue_workflow.py <ISSUE-KEY>
 # -----------------------------------------------------------------------------
 jira:
+  # Required: Jira instance base URL
+  base_url: https://your-jira-instance.example.com
+
+  # Required: Jira API token (generate at https://id.atlassian.com/manage-profile/security/api-tokens)
+  api_token: your_jira_api_token_here
+
+  # Required: Jira project key this server is allowed to access
+  project_key: PROJECT_KEY
+
   # The jira_get_latest_assigned_issue tool returns issues in any of these statuses.
   # Required (when jira plugin is enabled)
   latest_assigned_statuses:
@@ -94,3 +114,33 @@ jira:
     # have their metadata returned, not their content.
     # Default: 1048576 (1 MiB)
     max_bytes_per_image: 1048576
+
+
+# -----------------------------------------------------------------------------
+# Plugin: database
+# Required: plugins.enabled contains "database"
+# Supports SQL Server and MySQL.
+# SQL Server requires the Microsoft ODBC Driver for SQL Server on the host.
+# The configured database account should be read-only.
+# -----------------------------------------------------------------------------
+database:
+  # Required
+  type: sqlserver          # sqlserver | mysql
+  host: your-db-host.example.com
+  user: readonly_user
+  password: your_password_here
+
+  # Optional: defaults to "master" for sqlserver, empty for mysql
+  name: master
+
+  # Optional: defaults to 1433 for sqlserver, 3306 for mysql
+  port: 1433
+
+  # Optional: sqlserver only; defaults to "ODBC Driver 18 for SQL Server"
+  driver: ODBC Driver 18 for SQL Server
+
+  # Optional: sqlserver only; defaults to false
+  trust_server_certificate: true
+
+  # Optional: defaults to 5
+  connect_timeout_seconds: 5

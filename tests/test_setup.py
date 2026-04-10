@@ -5,10 +5,11 @@ from pathlib import Path
 
 from work_mcp.setup import (
     SetupAnswers,
-    build_updated_env,
     build_updated_yaml,
     diagnose,
     has_errors,
+    is_jira_config_complete,
+    is_log_search_config_complete,
 )
 
 
@@ -38,48 +39,33 @@ def _answers(**overrides: object) -> SetupAnswers:
     return SetupAnswers(**defaults)  # type: ignore[arg-type]
 
 
-def test_build_updated_env_keeps_only_enabled_plugin_credentials() -> None:
-    existing = {
-        "DB_TYPE": "sqlserver",
-        "DB_HOST": "db.example.internal",
-        "DB_PORT": "1433",
-        "DB_USER": "readonly_user",
-        "DB_PASSWORD": "secret",
-        "DB_NAME": "master",
-        "DB_DRIVER": "ODBC Driver 18 for SQL Server",
-        "DB_TRUST_SERVER_CERTIFICATE": "true",
-        "DINGTALK_WEBHOOK_URL": "https://example.invalid/webhook",
-        "DINGTALK_SECRET": "secret",
-        "JIRA_BASE_URL": "https://jira.example.invalid",
-        "JIRA_API_TOKEN": "keep-me",
-        "JIRA_PROJECT_KEY": "IOS",
+def test_build_updated_yaml_updates_active_plugin_and_preserves_inactive_ones() -> None:
+    existing_yaml = {
+        "database": {"type": "sqlserver", "host": "old-host"},
+        "dingtalk": {"webhook_url": "https://old.invalid/webhook"},
+        "jira": {"base_url": "https://old-jira.invalid"},
     }
 
-    updated = build_updated_env(existing, _answers())
+    updated = build_updated_yaml(existing_yaml, _answers())
 
-    assert updated["DB_TYPE"] == "mysql"
-    assert updated["DB_PORT"] == "3306"
-    assert updated["DB_HOST"] == "db.example.internal"
-    assert "DB_DRIVER" not in updated
-    assert "DB_TRUST_SERVER_CERTIFICATE" not in updated
-    assert "DINGTALK_WEBHOOK_URL" not in updated
-    assert "JIRA_API_TOKEN" not in updated
+    # Active plugin (database) is updated with new values
+    assert updated["database"]["type"] == "mysql"
+    assert updated["database"]["host"] == "db.example.internal"
+    assert "driver" not in updated["database"]
+    assert "trust_server_certificate" not in updated["database"]
+    # Inactive plugins are preserved, not removed
+    assert updated["dingtalk"]["webhook_url"] == "https://old.invalid/webhook"
+    assert updated["jira"]["base_url"] == "https://old-jira.invalid"
 
 
-def test_build_updated_env_removes_database_and_dingtalk_when_only_jira_is_enabled() -> None:
-    existing = {
-        "DB_TYPE": "mysql",
-        "DB_HOST": "db.example.internal",
-        "DB_PORT": "3306",
-        "DB_USER": "readonly_user",
-        "DB_PASSWORD": "secret",
-        "DB_NAME": "app_db",
-        "DINGTALK_WEBHOOK_URL": "https://example.invalid/webhook",
-        "DINGTALK_SECRET": "secret",
+def test_build_updated_yaml_updates_jira_and_preserves_database_and_dingtalk() -> None:
+    existing_yaml = {
+        "database": {"type": "mysql", "host": "db.example.internal"},
+        "dingtalk": {"webhook_url": "https://old.invalid/webhook"},
     }
 
-    updated = build_updated_env(
-        existing,
+    updated = build_updated_yaml(
+        existing_yaml,
         _answers(
             enable_database=False,
             enable_log_search=False,
@@ -90,13 +76,15 @@ def test_build_updated_env_removes_database_and_dingtalk_when_only_jira_is_enabl
         ),
     )
 
-    assert "DB_TYPE" not in updated
-    assert "DINGTALK_WEBHOOK_URL" not in updated
-    assert updated["JIRA_BASE_URL"] == "https://jira.example.invalid"
-    assert updated["JIRA_API_TOKEN"] == "jira-token"
-    assert updated["JIRA_PROJECT_KEY"] == "IOS"
+    # Inactive plugins are preserved, not removed
+    assert updated["database"]["host"] == "db.example.internal"
+    assert updated["dingtalk"]["webhook_url"] == "https://old.invalid/webhook"
+    # Active plugin (jira) is written
+    assert updated["jira"]["base_url"] == "https://jira.example.invalid"
+    assert updated["jira"]["api_token"] == "jira-token"
+    assert updated["jira"]["project_key"] == "IOS"
 
-def test_build_updated_yaml_replaces_enabled_plugins_and_removes_disabled_sections() -> None:
+def test_build_updated_yaml_replaces_enabled_plugins_and_preserves_inactive_sections() -> None:
     existing_yaml = {
         "plugins": {"enabled": ["jira", "database"]},
         "log_search": {"log_base_dir": "/tmp/existing-logs"},
@@ -107,25 +95,35 @@ def test_build_updated_yaml_replaces_enabled_plugins_and_removes_disabled_sectio
 
     assert updated["plugins"]["enabled"] == ["database", "log_search", "dingtalk"]
     assert updated["log_search"]["log_base_dir"] == "/tmp/work-logs"
-    assert "jira" not in updated
+    # jira is inactive but its existing config is preserved
+    assert updated["jira"]["start_target_status"] == "In Progress"
 
 
 def test_build_updated_yaml_adds_default_jira_config_when_enabled() -> None:
-    updated = build_updated_yaml({}, _answers(enable_database=False, enable_log_search=False, enable_jira=True))
+    updated = build_updated_yaml(
+        {},
+        _answers(
+            enable_database=False,
+            enable_log_search=False,
+            enable_jira=True,
+            jira_base_url="https://jira.example.invalid",
+            jira_api_token="jira-token",
+            jira_project_key="IOS",
+        ),
+    )
 
     assert updated["plugins"]["enabled"] == ["jira"]
-    assert updated["jira"] == {
-        "latest_assigned_statuses": ["重新打开", "ToDo"],
-        "start_target_status": "已接受",
-        "resolve_target_status": "已解决",
-        "attachments": {
-            "max_images": 5,
-            "max_bytes_per_image": 1048576,
-        },
-    }
+    jira = updated["jira"]
+    assert jira["base_url"] == "https://jira.example.invalid"
+    assert jira["api_token"] == "jira-token"
+    assert jira["project_key"] == "IOS"
+    assert jira["latest_assigned_statuses"] == ["重新打开", "ToDo"]
+    assert jira["start_target_status"] == "已接受"
+    assert jira["resolve_target_status"] == "已解决"
+    assert jira["attachments"] == {"max_images": 5, "max_bytes_per_image": 1048576}
 
 
-def test_build_updated_yaml_allows_disabling_database_and_log_search() -> None:
+def test_build_updated_yaml_updates_plugins_enabled_and_preserves_inactive_sections() -> None:
     existing_yaml = {
         "plugins": {"enabled": ["database", "log_search"]},
         "log_search": {"log_base_dir": "/tmp/existing-logs"},
@@ -137,7 +135,8 @@ def test_build_updated_yaml_allows_disabling_database_and_log_search() -> None:
     )
 
     assert updated["plugins"]["enabled"] == []
-    assert "log_search" not in updated
+    # Inactive sections are preserved, not removed
+    assert updated["log_search"]["log_base_dir"] == "/tmp/existing-logs"
 
 
 def test_diagnose_reports_success_for_valid_mysql_configuration(
@@ -146,21 +145,6 @@ def test_diagnose_reports_success_for_valid_mysql_configuration(
 ) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    (tmp_path / ".env").write_text(
-        "\n".join(
-            [
-                "DB_TYPE=mysql",
-                "DB_HOST=db.example.internal",
-                "DB_PORT=3306",
-                "DB_USER=readonly_user",
-                "DB_PASSWORD=secret",
-                "DB_NAME=app_db",
-                "DB_CONNECT_TIMEOUT_SECONDS=5",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
     (tmp_path / "config.yaml").write_text(
         f"""
 plugins:
@@ -169,6 +153,14 @@ plugins:
     - log_search
 log_search:
   log_base_dir: {log_dir}
+database:
+  type: mysql
+  host: db.example.internal
+  port: 3306
+  user: readonly_user
+  password: secret
+  name: app_db
+  connect_timeout_seconds: 5
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -196,22 +188,6 @@ def test_diagnose_reports_missing_sqlserver_driver(
 ) -> None:
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    (tmp_path / ".env").write_text(
-        "\n".join(
-            [
-                "DB_TYPE=sqlserver",
-                "DB_HOST=db.example.internal",
-                "DB_PORT=1433",
-                "DB_USER=readonly_user",
-                "DB_PASSWORD=secret",
-                "DB_NAME=master",
-                "DB_DRIVER=ODBC Driver 18 for SQL Server",
-                "DB_TRUST_SERVER_CERTIFICATE=false",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
     (tmp_path / "config.yaml").write_text(
         f"""
 plugins:
@@ -220,6 +196,15 @@ plugins:
     - log_search
 log_search:
   log_base_dir: {log_dir}
+database:
+  type: sqlserver
+  host: db.example.internal
+  port: 1433
+  user: readonly_user
+  password: secret
+  name: master
+  driver: ODBC Driver 18 for SQL Server
+  trust_server_certificate: false
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -245,26 +230,19 @@ def test_diagnose_reports_database_probe_timeout(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    (tmp_path / ".env").write_text(
-        "\n".join(
-            [
-                "DB_TYPE=mysql",
-                "DB_HOST=db.example.internal",
-                "DB_PORT=3306",
-                "DB_USER=readonly_user",
-                "DB_PASSWORD=secret",
-                "DB_NAME=app_db",
-                "DB_CONNECT_TIMEOUT_SECONDS=1",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
     (tmp_path / "config.yaml").write_text(
         """
 plugins:
   enabled:
     - database
+database:
+  type: mysql
+  host: db.example.internal
+  port: 3306
+  user: readonly_user
+  password: secret
+  name: app_db
+  connect_timeout_seconds: 1
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -303,3 +281,17 @@ plugins:
 
     assert has_errors(results) is False
     assert any(result.message == "enabled plugins: none" for result in results)
+
+
+def test_is_jira_config_complete_treats_none_as_missing() -> None:
+    assert is_jira_config_complete(
+        {
+            "base_url": None,
+            "api_token": "secret-token",
+            "project_key": "IOS",
+        }
+    ) is False
+
+
+def test_is_log_search_config_complete_treats_none_as_missing() -> None:
+    assert is_log_search_config_complete({"log_base_dir": None}) is False

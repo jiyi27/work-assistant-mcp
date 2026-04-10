@@ -56,6 +56,9 @@ plugins:
   enabled:
     - jira
 jira:
+  base_url: https://jira.example.invalid
+  api_token: secret-token
+  project_key: IOS
   latest_assigned_statuses:
     - 待处理
     - 已接收
@@ -64,22 +67,6 @@ jira:
 """.strip(),
         encoding="utf-8",
     )
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "JIRA_BASE_URL=https://jira.example.invalid",
-                "JIRA_API_TOKEN=secret-token",
-                "JIRA_PROJECT_KEY=IOS",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.delenv("DINGTALK_WEBHOOK_URL", raising=False)
-    monkeypatch.delenv("DINGTALK_SECRET", raising=False)
-    monkeypatch.delenv("JIRA_BASE_URL", raising=False)
-    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
 
     settings = config_module.get_settings()
@@ -108,13 +95,9 @@ jira:
 """.strip(),
         encoding="utf-8",
     )
-
-    monkeypatch.delenv("DINGTALK_WEBHOOK_URL", raising=False)
-    monkeypatch.delenv("JIRA_BASE_URL", raising=False)
-    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
 
-    with pytest.raises(RuntimeError, match="missing JIRA_BASE_URL"):
+    with pytest.raises(RuntimeError, match="missing jira.base_url"):
         config_module.get_settings()
 
 
@@ -178,28 +161,43 @@ plugins:
   enabled:
     - jira
 jira:
+  base_url: https://jira.example.invalid
+  api_token: secret-token
+  project_key: IOS
   start_target_status: 已接收
   resolve_target_status: 已解决
 """.strip(),
         encoding="utf-8",
     )
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "JIRA_BASE_URL=https://jira.example.invalid",
-                "JIRA_API_TOKEN=secret-token",
-                "JIRA_PROJECT_KEY=IOS",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.delenv("JIRA_BASE_URL", raising=False)
-    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
 
     with pytest.raises(RuntimeError, match="missing jira.latest_assigned_statuses"):
+        config_module.get_settings()
+
+
+def test_get_settings_treats_null_jira_credentials_as_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+plugins:
+  enabled:
+    - jira
+jira:
+  base_url: null
+  api_token: secret-token
+  project_key: IOS
+  latest_assigned_statuses:
+    - 待处理
+  start_target_status: 已接收
+  resolve_target_status: 已解决
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    with pytest.raises(RuntimeError, match="missing jira.base_url"):
         config_module.get_settings()
 
 
@@ -356,7 +354,7 @@ startup:
         config_module.get_settings()
 
 
-def test_get_settings_reads_database_env_when_database_plugin_enabled(
+def test_get_settings_reads_database_config_when_database_plugin_enabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     yaml_path = tmp_path / "config.yaml"
@@ -365,24 +363,17 @@ def test_get_settings_reads_database_env_when_database_plugin_enabled(
 plugins:
   enabled:
     - database
+database:
+  type: sqlserver
+  host: db.example.internal
+  port: 1444
+  user: readonly_user
+  password: secret
+  name: master
+  driver: ODBC Driver 18 for SQL Server
+  trust_server_certificate: true
+  connect_timeout_seconds: 9
 """.strip(),
-        encoding="utf-8",
-    )
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "DB_TYPE=sqlserver",
-                "DB_HOST=db.example.internal",
-                "DB_PORT=1444",
-                "DB_USER=readonly_user",
-                "DB_PASSWORD=secret",
-                "DB_NAME=master",
-                "DB_DRIVER=ODBC Driver 18 for SQL Server",
-                "DB_TRUST_SERVER_CERTIFICATE=true",
-                "DB_CONNECT_TIMEOUT_SECONDS=9",
-            ]
-        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
@@ -400,42 +391,23 @@ plugins:
     assert settings.database.connect_timeout_seconds == 9
 
 
-def test_get_settings_reads_mysql_env_when_database_plugin_enabled(
+def test_get_settings_reads_mysql_config_when_database_plugin_enabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    for env_name in (
-        "DB_TYPE",
-        "DB_HOST",
-        "DB_PORT",
-        "DB_USER",
-        "DB_PASSWORD",
-        "DB_NAME",
-        "DB_DRIVER",
-        "DB_TRUST_SERVER_CERTIFICATE",
-        "DB_CONNECT_TIMEOUT_SECONDS",
-    ):
-        monkeypatch.delenv(env_name, raising=False)
     yaml_path = tmp_path / "config.yaml"
     yaml_path.write_text(
         """
 plugins:
   enabled:
     - database
+database:
+  type: mysql
+  host: mysql.example.internal
+  user: readonly_user
+  password: secret
+  name: app_db
+  connect_timeout_seconds: 9
 """.strip(),
-        encoding="utf-8",
-    )
-    env_path = tmp_path / ".env"
-    env_path.write_text(
-        "\n".join(
-            [
-                "DB_TYPE=mysql",
-                "DB_HOST=mysql.example.internal",
-                "DB_USER=readonly_user",
-                "DB_PASSWORD=secret",
-                "DB_NAME=app_db",
-                "DB_CONNECT_TIMEOUT_SECONDS=9",
-            ]
-        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
@@ -455,7 +427,7 @@ plugins:
     assert settings.database.connect_timeout_seconds == 9
 
 
-def test_get_settings_requires_database_env_when_database_plugin_enabled(
+def test_get_settings_requires_database_config_when_database_plugin_enabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     yaml_path = tmp_path / "config.yaml"
@@ -464,22 +436,10 @@ def test_get_settings_requires_database_env_when_database_plugin_enabled(
 plugins:
   enabled:
     - database
-    """.strip(),
+""".strip(),
         encoding="utf-8",
     )
-    for env_name in (
-        "DB_TYPE",
-        "DB_HOST",
-        "DB_PORT",
-        "DB_USER",
-        "DB_PASSWORD",
-        "DB_NAME",
-        "DB_DRIVER",
-        "DB_TRUST_SERVER_CERTIFICATE",
-        "DB_CONNECT_TIMEOUT_SECONDS",
-    ):
-        monkeypatch.delenv(env_name, raising=False)
     monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
 
-    with pytest.raises(RuntimeError, match="missing DB_HOST"):
+    with pytest.raises(RuntimeError, match="missing database section"):
         config_module.get_settings()

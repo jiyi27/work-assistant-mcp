@@ -6,40 +6,34 @@ import subprocess
 
 from work_mcp.config import DB_TYPE_MYSQL, DB_TYPE_SQLSERVER, PROJECT_ROOT
 from work_mcp.setup import (
-    DATABASE_CHOICE_BY_NUMBER,
     SetupAnswers,
-    build_updated_env,
     build_updated_yaml,
+    connectivity_hint,
     current_value_label,
     default_driver_for_db,
     default_port_for_db,
-    connectivity_hint,
     diagnose,
-    env_file_path,
     has_errors,
+    is_database_config_complete,
+    is_jira_config_complete,
+    is_log_search_config_complete,
     load_existing_yaml,
-    parse_env_file,
+    normalize_text_value,
     validate_log_base_dir,
     validate_port,
     validate_positive_int,
     validate_required_text,
     validate_sqlserver_driver,
-    write_env_file,
     write_yaml_file,
 )
 
-PLUGIN_DATABASE = "database"
-PLUGIN_LOG_SEARCH = "log_search"
-PLUGIN_DINGTALK = "dingtalk"
-PLUGIN_JIRA = "jira"
 ENV_TYPE_REMOTE = "remote"
 ENV_TYPE_LOCAL = "local"
-YES_NO_CHOICES = {
-    "1": False,
-    "2": True,
-}
-DEFAULT_DISABLE_CHOICE = "1"
 DEFAULT_DATABASE_CHOICE = "1"
+DATABASE_CHOICE_BY_NUMBER = {
+    "1": DB_TYPE_MYSQL,
+    "2": DB_TYPE_SQLSERVER,
+}
 ENVIRONMENT_TYPE_BY_NUMBER = {
     "1": ENV_TYPE_REMOTE,
     "2": ENV_TYPE_LOCAL,
@@ -95,16 +89,6 @@ def prompt_text(
         except RuntimeError as exc:
             print(f"输入不合法: {exc}")
 
-
-def prompt_yes_no(label: str, *, current_enabled: bool | None = None) -> bool:
-    if current_enabled is not None:
-        print(f"当前{label}: {'已开启' if current_enabled else '未开启'}")
-    print(f"是否开启{label}？")
-    print("1. 不开启（默认）  2. 开启")
-    selected = prompt_choice("请输入选项", YES_NO_CHOICES, DEFAULT_DISABLE_CHOICE)
-    return bool(selected)
-
-
 def prompt_environment_type() -> str:
     print()
     print("当前是什么运行环境？")
@@ -114,29 +98,8 @@ def prompt_environment_type() -> str:
     return str(selected)
 
 
-def prompt_should_modify_existing(env_path: Path, yaml_path: Path) -> bool:
-    if not env_path.exists() and not yaml_path.exists():
-        return True
-
-    print("检测到已有配置文件。")
-    selected = prompt_choice(
-        "是否要修改现有配置？1. 不修改（默认）  2. 修改\n请输入选项",
-        {"1": False, "2": True},
-        "1",
-    )
-    return bool(selected)
-
-
-def resolve_plugin_enabled(label: str, *, current_enabled: bool) -> bool:
-    print()
-    if current_enabled:
-        print(f"{label} 已开启，继续进入配置。")
-        return True
-    return prompt_yes_no(label, current_enabled=False)
-
-
-def prompt_database_type(existing_env: dict[str, str]) -> str:
-    existing_db_type = existing_env.get("DB_TYPE", "").strip().lower()
+def prompt_database_type(existing_yaml_db: dict) -> str:
+    existing_db_type = normalize_text_value(existing_yaml_db.get("type")).lower()
     if existing_db_type in {DB_TYPE_MYSQL, DB_TYPE_SQLSERVER}:
         choice_number = "1" if existing_db_type == DB_TYPE_MYSQL else "2"
         if prompt_keep_existing("数据库类型", existing_db_type):
@@ -172,19 +135,89 @@ def sync_dependencies(project_root: Path) -> None:
         ) from exc
 
 
-def enabled_plugins_from_yaml(yaml_values: dict) -> set[str]:
-    plugins = yaml_values.get("plugins", {})
-    if not isinstance(plugins, dict):
-        return set()
-    raw_enabled = plugins.get("enabled", [])
-    if not isinstance(raw_enabled, list):
-        return set()
-    return {str(item).strip() for item in raw_enabled if str(item).strip()}
+def _yaml_db_to_answers(yaml_db: dict) -> dict[str, object]:
+    """Convert yaml database section keys to the answers dict format."""
+    db_type = normalize_text_value(yaml_db.get("type")).lower()
+    return {
+        "db_type": db_type,
+        "host": normalize_text_value(yaml_db.get("host")),
+        "port": int(yaml_db.get("port") or default_port_for_db(db_type)),
+        "user": normalize_text_value(yaml_db.get("user")),
+        "password": normalize_text_value(yaml_db.get("password")),
+        "database_name": normalize_text_value(yaml_db.get("name")),
+        "driver": normalize_text_value(yaml_db.get("driver", default_driver_for_db(db_type))),
+        "trust_server_certificate": bool(yaml_db.get("trust_server_certificate", True)),
+        "connect_timeout_seconds": int(yaml_db.get("connect_timeout_seconds", 5)),
+    }
 
 
-def collect_database_answers(existing_env: dict[str, str]) -> dict[str, object]:
+def collect_database_config(yaml_db: dict) -> dict[str, object]:
+    """Skip prompts for complete config; otherwise prompt field by field."""
+    if is_database_config_complete(yaml_db):
+        return _yaml_db_to_answers(yaml_db)
+    answers = collect_database_answers(yaml_db)
+    answers.update(collect_sqlserver_answers(yaml_db, str(answers["db_type"])))
+    return answers
+
+
+def _collect_field_values(
+    title: str,
+    existing_section: dict,
+    fields: tuple[tuple[str, str, object, str, bool, str], ...],
+) -> dict[str, str]:
+    print(f"\n[{title}]")
+    collected: dict[str, str] = {}
+    for output_key, prompt_label, validator, yaml_key, allow_empty, secret_field in fields:
+        collected[output_key] = str(
+            prompt_text(
+                prompt_label,
+                existing_value=normalize_text_value(existing_section.get(yaml_key)),
+                validator=validator,
+                allow_empty=allow_empty,
+                secret_field=secret_field,
+            )
+        )
+    return collected
+
+
+def collect_jira_config(yaml_jira: dict) -> dict[str, str]:
+    """Skip prompts for complete config; otherwise prompt field by field."""
+    if is_jira_config_complete(yaml_jira):
+        return {
+            "jira_base_url": normalize_text_value(yaml_jira.get("base_url")),
+            "jira_api_token": normalize_text_value(yaml_jira.get("api_token")),
+            "jira_project_key": normalize_text_value(yaml_jira.get("project_key")),
+        }
+    return _collect_field_values(
+        "Jira 配置",
+        yaml_jira,
+        (
+            ("jira_base_url", "Jira 地址是什么", lambda value: validate_required_text(value, "base_url"), "base_url", False, ""),
+            ("jira_api_token", "Jira API Token 是什么", lambda value: validate_required_text(value, "api_token"), "api_token", False, "api_token"),
+            ("jira_project_key", "Jira 项目 Key 是什么", lambda value: validate_required_text(value, "project_key"), "project_key", False, ""),
+        ),
+    )
+
+
+def collect_log_search_config(yaml_values: dict) -> dict[str, str]:
+    """Skip prompts for complete config; otherwise prompt field by field."""
+    log_search = yaml_values.get("log_search") or {}
+    if not isinstance(log_search, dict):
+        log_search = {}
+    if is_log_search_config_complete(log_search):
+        return {"log_base_dir": normalize_text_value(log_search.get("log_base_dir"))}
+    return _collect_field_values(
+        "日志搜索配置",
+        log_search,
+        (
+            ("log_base_dir", "日志根目录的绝对路径是什么", validate_log_base_dir, "log_base_dir", False, ""),
+        ),
+    )
+
+
+def collect_database_answers(existing_yaml_db: dict) -> dict[str, object]:
     print("\n[数据库配置]")
-    db_type = prompt_database_type(existing_env)
+    db_type = prompt_database_type(existing_yaml_db)
     port_default = str(default_port_for_db(db_type))
 
     return {
@@ -192,55 +225,53 @@ def collect_database_answers(existing_env: dict[str, str]) -> dict[str, object]:
         "host": str(
             prompt_text(
                 "数据库地址是什么",
-                existing_value=existing_env.get("DB_HOST", ""),
-                validator=lambda value: validate_required_text(value, "DB_HOST"),
+                existing_value=normalize_text_value(existing_yaml_db.get("host")),
+                validator=lambda value: validate_required_text(value, "host"),
             )
         ),
         "port": int(
             prompt_text(
                 "数据库端口是多少",
-                existing_value=existing_env.get("DB_PORT", ""),
+                existing_value=normalize_text_value(existing_yaml_db.get("port")),
                 default_value=port_default,
-                validator=lambda value: validate_port(value, "DB_PORT"),
+                validator=lambda value: validate_port(value, "port"),
             )
         ),
         "user": str(
             prompt_text(
                 "数据库用户名是什么",
-                existing_value=existing_env.get("DB_USER", ""),
-                validator=lambda value: validate_required_text(value, "DB_USER"),
+                existing_value=normalize_text_value(existing_yaml_db.get("user")),
+                validator=lambda value: validate_required_text(value, "user"),
             )
         ),
         "password": str(
             prompt_text(
                 "数据库密码是什么",
-                existing_value=existing_env.get("DB_PASSWORD", ""),
-                validator=lambda value: validate_required_text(value, "DB_PASSWORD"),
-                secret_field="DB_PASSWORD",
+                existing_value=normalize_text_value(existing_yaml_db.get("password")),
+                validator=lambda value: validate_required_text(value, "password"),
+                secret_field="password",
             )
         ),
         "database_name": str(
             prompt_text(
                 "默认连接的数据库名是什么",
-                existing_value=existing_env.get("DB_NAME", ""),
+                existing_value=normalize_text_value(existing_yaml_db.get("name")),
                 default_value="master",
-                validator=lambda value: validate_required_text(value, "DB_NAME"),
+                validator=lambda value: validate_required_text(value, "name"),
             )
         ),
         "connect_timeout_seconds": int(
             prompt_text(
                 "数据库连接超时时间（秒）是多少",
-                existing_value=existing_env.get("DB_CONNECT_TIMEOUT_SECONDS", ""),
+                existing_value=normalize_text_value(existing_yaml_db.get("connect_timeout_seconds")),
                 default_value="5",
-                validator=lambda value: validate_positive_int(
-                    value, "DB_CONNECT_TIMEOUT_SECONDS"
-                ),
+                validator=lambda value: validate_positive_int(value, "connect_timeout_seconds"),
             )
         ),
     }
 
 
-def collect_sqlserver_answers(existing_env: dict[str, str], db_type: str) -> dict[str, object]:
+def collect_sqlserver_answers(existing_yaml_db: dict, db_type: str) -> dict[str, object]:
     if db_type != DB_TYPE_SQLSERVER:
         return {
             "driver": "",
@@ -251,79 +282,13 @@ def collect_sqlserver_answers(existing_env: dict[str, str], db_type: str) -> dic
         "driver": str(
             prompt_text(
                 "SQL Server ODBC Driver 名称是什么",
-                existing_value=existing_env.get("DB_DRIVER", ""),
+                existing_value=normalize_text_value(existing_yaml_db.get("driver")),
                 default_value=default_driver_for_db(db_type),
                 validator=validate_sqlserver_driver,
             )
         ),
         "trust_server_certificate": True,
     }
-
-
-def collect_jira_answers(existing_env: dict[str, str]) -> dict[str, str]:
-    print("\n[Jira 配置]")
-    return {
-        "jira_base_url": str(
-            prompt_text(
-                "Jira 地址是什么",
-                existing_value=existing_env.get("JIRA_BASE_URL", ""),
-                validator=lambda value: validate_required_text(value, "JIRA_BASE_URL"),
-            )
-        ),
-        "jira_api_token": str(
-            prompt_text(
-                "Jira API Token 是什么",
-                existing_value=existing_env.get("JIRA_API_TOKEN", ""),
-                validator=lambda value: validate_required_text(value, "JIRA_API_TOKEN"),
-                secret_field="JIRA_API_TOKEN",
-            )
-        ),
-        "jira_project_key": str(
-            prompt_text(
-                "Jira 项目 Key 是什么",
-                existing_value=existing_env.get("JIRA_PROJECT_KEY", ""),
-                validator=lambda value: validate_required_text(value, "JIRA_PROJECT_KEY"),
-            )
-        ),
-    }
-
-
-def collect_log_search_answers(yaml_values: dict) -> dict[str, str]:
-    print("\n[日志搜索配置]")
-    return {
-        "log_base_dir": str(
-            prompt_text(
-                "日志根目录的绝对路径是什么",
-                existing_value=_existing_log_base_dir(yaml_values),
-                validator=validate_log_base_dir,
-            )
-        ),
-    }
-
-
-def collect_dingtalk_answers(existing_env: dict[str, str]) -> dict[str, str]:
-    print("\n[钉钉配置]")
-    return {
-        "dingtalk_webhook_url": str(
-            prompt_text(
-                "钉钉 webhook 地址是什么",
-                existing_value=existing_env.get("DINGTALK_WEBHOOK_URL", ""),
-                validator=lambda value: validate_required_text(
-                    value, "DINGTALK_WEBHOOK_URL"
-                ),
-            )
-        ),
-        "dingtalk_secret": str(
-            prompt_text(
-                "钉钉加签 secret 是什么（可留空）",
-                existing_value=existing_env.get("DINGTALK_SECRET", ""),
-                allow_empty=True,
-                validator=lambda value: value,
-                secret_field="DINGTALK_SECRET",
-            )
-        ),
-    }
-
 
 def _default_database_answers() -> dict[str, object]:
     return {
@@ -343,41 +308,36 @@ def collect_answers(
     env_type: str,
     project_root: Path = PROJECT_ROOT,
 ) -> SetupAnswers:
-    env_values = parse_env_file(env_file_path(project_root))
     yaml_values = load_existing_yaml(project_root / "config.yaml")
+
+    existing_yaml_db = yaml_values.get("database") or {}
+    if not isinstance(existing_yaml_db, dict):
+        existing_yaml_db = {}
+
+    existing_yaml_jira = yaml_values.get("jira") or {}
+    if not isinstance(existing_yaml_jira, dict):
+        existing_yaml_jira = {}
 
     print("开始初始化配置。")
 
     if env_type == ENV_TYPE_REMOTE:
-        print("远程服务器模式：将启用 database 和 log_search，并移除 jira、dingtalk。")
+        print("远程服务器模式：将启用 database 和 log_search。")
         enable_database = True
         enable_log_search = True
-        enable_dingtalk = False
         enable_jira = False
     else:
-        print("本地模式：将只启用 jira，并移除 database、log_search、dingtalk。")
+        print("本地模式：将启用 jira。")
         enable_database = False
         enable_log_search = False
-        enable_dingtalk = False
         enable_jira = True
 
     database_answers: dict[str, object] = _default_database_answers()
     if enable_database:
-        database_answers.update(collect_database_answers(env_values))
-        database_answers.update(
-            collect_sqlserver_answers(env_values, str(database_answers["db_type"]))
-        )
+        database_answers.update(collect_database_config(existing_yaml_db))
 
     log_search_answers: dict[str, str] = {"log_base_dir": ""}
     if enable_log_search:
-        log_search_answers.update(collect_log_search_answers(yaml_values))
-
-    dingtalk_answers = {
-        "dingtalk_webhook_url": "",
-        "dingtalk_secret": "",
-    }
-    if enable_dingtalk:
-        dingtalk_answers.update(collect_dingtalk_answers(env_values))
+        log_search_answers.update(collect_log_search_config(yaml_values))
 
     jira_answers: dict[str, str] = {
         "jira_base_url": "",
@@ -385,7 +345,7 @@ def collect_answers(
         "jira_project_key": "",
     }
     if enable_jira:
-        jira_answers.update(collect_jira_answers(env_values))
+        jira_answers.update(collect_jira_config(existing_yaml_jira))
 
     return SetupAnswers(
         enable_database=enable_database,
@@ -400,26 +360,16 @@ def collect_answers(
         connect_timeout_seconds=int(database_answers["connect_timeout_seconds"]),
         enable_log_search=enable_log_search,
         log_base_dir=log_search_answers["log_base_dir"],
-        enable_dingtalk=enable_dingtalk,
-        dingtalk_webhook_url=dingtalk_answers["dingtalk_webhook_url"],
-        dingtalk_secret=dingtalk_answers["dingtalk_secret"],
+        enable_dingtalk=False,
+        dingtalk_webhook_url="",
+        dingtalk_secret="",
         enable_jira=enable_jira,
         jira_base_url=str(jira_answers["jira_base_url"]),
         jira_api_token=str(jira_answers["jira_api_token"]),
         jira_project_key=str(jira_answers["jira_project_key"]),
     )
-
-
-def _existing_log_base_dir(yaml_values: dict) -> str:
-    log_search = yaml_values.get("log_search")
-    if not isinstance(log_search, dict):
-        return ""
-    return str(log_search.get("log_base_dir", "")).strip()
-
-
 def main() -> None:
     project_root = PROJECT_ROOT
-    env_path = env_file_path(project_root)
     yaml_path = project_root / "config.yaml"
 
     try:
@@ -427,19 +377,10 @@ def main() -> None:
         sync_dependencies(project_root)
         env_type = prompt_environment_type()
 
-        should_modify_existing = True
-        if env_type != ENV_TYPE_REMOTE:
-            should_modify_existing = prompt_should_modify_existing(env_path, yaml_path)
-
-        if should_modify_existing:
-            answers = collect_answers(env_type, project_root)
-            existing_env = parse_env_file(env_path)
-            existing_yaml = load_existing_yaml(yaml_path)
-            write_env_file(env_path, build_updated_env(existing_env, answers))
-            write_yaml_file(yaml_path, build_updated_yaml(existing_yaml, answers))
-            print("配置保存成功。")
-        else:
-            print("已跳过配置修改，直接进行检查。")
+        answers = collect_answers(env_type, project_root)
+        existing_yaml = load_existing_yaml(yaml_path)
+        write_yaml_file(yaml_path, build_updated_yaml(existing_yaml, answers))
+        print("配置保存成功。")
 
         print("\n开始执行配置检查...")
         results = diagnose(project_root)
