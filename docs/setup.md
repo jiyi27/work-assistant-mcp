@@ -89,25 +89,9 @@ make run HOST=127.0.0.1 PORT=9000
 http://<server-host>:<port>/mcp
 ```
 
-## 4. 验证配置
+## 4. 补充说明
 
-运行
-
-```bash
-make doctor
-```
-
-输出会包含
-
-- `[ok]`
-- `[warn]`
-- `[error]`
-
-有 `[error]` 时, 先修正配置再启动服务
-
-## 5. 补充说明
-
-### 5.1. Jira 状态校准
+### 4.1. Jira 状态校准
 
 本地模式启用 `jira` 后, `make init` 会先写入一组默认占位值, 通常你还需要根据自己项目的实际工作流状态修改 `config.yaml`
 
@@ -119,11 +103,21 @@ uv run python scripts/inspect_jira_issue_workflow.py <ISSUE-KEY>
 
 再按输出结果调整 `jira.latest_assigned_statuses`, `jira.start_target_status`, `jira.resolve_target_status`
 
-### 5.2. SQL Server 依赖
+### 4.2. 单独验证配置
+
+如果手动修改了 `.env` 或 `config.yaml`, 可以单独运行
+
+```bash
+make doctor
+```
+
+输出会包含 `[ok]` / `[warn]` / `[error]`, 有 `[error]` 时先修正配置再启动服务
+
+### 4.3. SQL Server 依赖
 
 如果远程模式使用 SQL Server, 需要先在主机上安装 ODBC Driver 18 for SQL Server, 字段和示例见 [`config.example.yaml`](../config.example.yaml)
 
-### 5.3. 手动配置文件
+### 4.4. 手动配置文件
 
 如果不使用 `make init`, 可以手动初始化
 
