@@ -41,10 +41,19 @@ ENV_KEYS_MANAGED_BY_INIT = (
     "DB_CONNECT_TIMEOUT_SECONDS",
     "DINGTALK_WEBHOOK_URL",
     "DINGTALK_SECRET",
+    "JIRA_BASE_URL",
+    "JIRA_API_TOKEN",
+    "JIRA_PROJECT_KEY",
 )
 OPTIONAL_PLUGIN_DATABASE = "database"
 OPTIONAL_PLUGIN_LOG_SEARCH = "log_search"
 OPTIONAL_PLUGIN_DINGTALK = "dingtalk"
+OPTIONAL_PLUGIN_JIRA = "jira"
+DEFAULT_JIRA_LATEST_ASSIGNED_STATUSES = ("重新打开", "ToDo")
+DEFAULT_JIRA_START_TARGET_STATUS = "已接受"
+DEFAULT_JIRA_RESOLVE_TARGET_STATUS = "已解决"
+DEFAULT_JIRA_ATTACHMENT_MAX_IMAGES = 5
+DEFAULT_JIRA_ATTACHMENT_MAX_BYTES = 1_048_576
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,10 @@ class SetupAnswers:
     enable_dingtalk: bool
     dingtalk_webhook_url: str
     dingtalk_secret: str
+    enable_jira: bool
+    jira_base_url: str
+    jira_api_token: str
+    jira_project_key: str
 
 
 @dataclass(frozen=True)
@@ -136,6 +149,11 @@ def build_updated_env(existing_env: dict[str, str], answers: SetupAnswers) -> di
         updated.pop("DINGTALK_WEBHOOK_URL", None)
         updated.pop("DINGTALK_SECRET", None)
 
+    if answers.enable_jira:
+        updated["JIRA_BASE_URL"] = answers.jira_base_url
+        updated["JIRA_API_TOKEN"] = answers.jira_api_token
+        updated["JIRA_PROJECT_KEY"] = answers.jira_project_key
+
     return updated
 
 
@@ -150,7 +168,7 @@ def build_updated_yaml(existing_yaml: dict[str, Any], answers: SetupAnswers) -> 
             OPTIONAL_PLUGIN_DATABASE,
             OPTIONAL_PLUGIN_LOG_SEARCH,
             OPTIONAL_PLUGIN_DINGTALK,
-            "jira",
+            OPTIONAL_PLUGIN_JIRA,
         }
     ]
     if answers.enable_database:
@@ -159,6 +177,8 @@ def build_updated_yaml(existing_yaml: dict[str, Any], answers: SetupAnswers) -> 
         enabled_plugins.append(OPTIONAL_PLUGIN_LOG_SEARCH)
     if answers.enable_dingtalk and OPTIONAL_PLUGIN_DINGTALK not in enabled_plugins:
         enabled_plugins.append(OPTIONAL_PLUGIN_DINGTALK)
+    if answers.enable_jira and OPTIONAL_PLUGIN_JIRA not in enabled_plugins:
+        enabled_plugins.append(OPTIONAL_PLUGIN_JIRA)
     updated["plugins"] = {"enabled": enabled_plugins}
 
     if answers.enable_log_search:
@@ -167,6 +187,17 @@ def build_updated_yaml(existing_yaml: dict[str, Any], answers: SetupAnswers) -> 
             log_search_section = {}
         log_search_section["log_base_dir"] = answers.log_base_dir
         updated["log_search"] = log_search_section
+
+    if answers.enable_jira:
+        updated["jira"] = {
+            "latest_assigned_statuses": list(DEFAULT_JIRA_LATEST_ASSIGNED_STATUSES),
+            "start_target_status": DEFAULT_JIRA_START_TARGET_STATUS,
+            "resolve_target_status": DEFAULT_JIRA_RESOLVE_TARGET_STATUS,
+            "attachments": {
+                "max_images": DEFAULT_JIRA_ATTACHMENT_MAX_IMAGES,
+                "max_bytes_per_image": DEFAULT_JIRA_ATTACHMENT_MAX_BYTES,
+            },
+        }
 
     return updated
 
@@ -203,7 +234,7 @@ def mask_secret(value: str) -> str:
 
 
 def current_value_label(field_name: str, value: str) -> str:
-    if field_name in {"DB_PASSWORD", "DINGTALK_SECRET"}:
+    if field_name in {"DB_PASSWORD", "DINGTALK_SECRET", "JIRA_API_TOKEN"}:
         return mask_secret(value)
     return value
 
@@ -251,12 +282,16 @@ def validate_sqlserver_driver(raw_value: str) -> str:
     available = get_installed_odbc_drivers()
     if available is None:
         raise RuntimeError(
-            "pyodbc is not installed. Run `uv sync` before configuring SQL Server."
+            "未安装 Python 依赖 pyodbc，请先执行 `uv sync`。"
+        )
+    if not available:
+        raise RuntimeError(
+            "未检测到可用的 SQL Server ODBC driver，请先在本机安装后再继续。"
         )
     if value not in available:
-        joined = ", ".join(available) if available else "none"
+        joined = ", ".join(available)
         raise RuntimeError(
-            f"ODBC driver '{value}' was not found. Installed drivers: {joined}."
+            f"未找到 ODBC driver '{value}'。当前已安装: {joined}。"
         )
     return value
 
@@ -336,7 +371,14 @@ def diagnose(project_root: Path = PROJECT_ROOT) -> list[DiagnosticResult]:
                 results.append(
                     DiagnosticResult(
                         "error",
-                        "pyodbc is not installed. Run `uv sync` before using SQL Server.",
+                        "未安装 Python 依赖 pyodbc，请先执行 `uv sync`。",
+                    )
+                )
+            elif not installed_drivers:
+                results.append(
+                    DiagnosticResult(
+                        "error",
+                        "未检测到可用的 SQL Server ODBC driver，请先在本机安装后再继续。",
                     )
                 )
             else:
@@ -399,6 +441,41 @@ def diagnose(project_root: Path = PROJECT_ROOT) -> list[DiagnosticResult]:
             results.append(DiagnosticResult("ok", "DINGTALK_WEBHOOK_URL is set"))
         else:
             results.append(DiagnosticResult("error", "DINGTALK_WEBHOOK_URL is missing from .env"))
+
+    if OPTIONAL_PLUGIN_JIRA in plugin_names:
+        for key in ("JIRA_BASE_URL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY"):
+            if env_values.get(key, "").strip():
+                results.append(DiagnosticResult("ok", f"{key} is set"))
+            else:
+                results.append(DiagnosticResult("error", f"{key} is missing from .env"))
+
+        jira_section = yaml_values.get("jira")
+        if not isinstance(jira_section, dict):
+            results.append(DiagnosticResult("error", "jira section is missing from config.yaml"))
+        else:
+            latest_statuses = jira_section.get("latest_assigned_statuses", [])
+            if isinstance(latest_statuses, list) and any(str(item).strip() for item in latest_statuses):
+                results.append(DiagnosticResult("ok", "jira.latest_assigned_statuses is set"))
+            else:
+                results.append(
+                    DiagnosticResult("error", "jira.latest_assigned_statuses is missing from config.yaml")
+                )
+
+            start_target_status = str(jira_section.get("start_target_status", "")).strip()
+            if start_target_status:
+                results.append(DiagnosticResult("ok", "jira.start_target_status is set"))
+            else:
+                results.append(
+                    DiagnosticResult("error", "jira.start_target_status is missing from config.yaml")
+                )
+
+            resolve_target_status = str(jira_section.get("resolve_target_status", "")).strip()
+            if resolve_target_status:
+                results.append(DiagnosticResult("ok", "jira.resolve_target_status is set"))
+            else:
+                results.append(
+                    DiagnosticResult("error", "jira.resolve_target_status is missing from config.yaml")
+                )
 
     return results
 

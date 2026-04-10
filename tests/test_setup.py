@@ -28,6 +28,10 @@ def _answers(**overrides: object) -> SetupAnswers:
         enable_dingtalk=False,
         dingtalk_webhook_url="",
         dingtalk_secret="",
+        enable_jira=False,
+        jira_base_url="",
+        jira_api_token="",
+        jira_project_key="",
     )
     defaults.update(overrides)
     return SetupAnswers(**defaults)  # type: ignore[arg-type]
@@ -64,6 +68,21 @@ def test_build_updated_yaml_sets_supported_plugins_and_preserves_existing_sectio
     assert updated["plugins"]["enabled"] == ["database", "log_search", "dingtalk"]
     assert updated["log_search"]["log_base_dir"] == "/tmp/work-logs"
     assert updated["jira"] == {"start_target_status": "In Progress"}
+
+
+def test_build_updated_yaml_adds_default_jira_config_when_enabled() -> None:
+    updated = build_updated_yaml({}, _answers(enable_database=False, enable_log_search=False, enable_jira=True))
+
+    assert updated["plugins"]["enabled"] == ["jira"]
+    assert updated["jira"] == {
+        "latest_assigned_statuses": ["重新打开", "ToDo"],
+        "start_target_status": "已接受",
+        "resolve_target_status": "已解决",
+        "attachments": {
+            "max_images": 5,
+            "max_bytes_per_image": 1048576,
+        },
+    }
 
 
 def test_build_updated_yaml_allows_disabling_database_and_log_search() -> None:
@@ -177,7 +196,8 @@ log_search:
 
     assert has_errors(results) is True
     assert any(
-        "Configured ODBC driver was not found." in result.message for result in results
+        "未检测到可用的 SQL Server ODBC driver" in result.message
+        for result in results
     )
 
 
