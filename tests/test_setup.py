@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from work_mcp.setup import (
@@ -236,6 +237,52 @@ log_search:
     assert has_errors(results) is True
     assert any(
         "未检测到可用的 SQL Server ODBC driver" in result.message
+        for result in results
+    )
+
+
+def test_diagnose_reports_database_probe_timeout(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "DB_TYPE=mysql",
+                "DB_HOST=db.example.internal",
+                "DB_PORT=3306",
+                "DB_USER=readonly_user",
+                "DB_PASSWORD=secret",
+                "DB_NAME=app_db",
+                "DB_CONNECT_TIMEOUT_SECONDS=1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config.yaml").write_text(
+        """
+plugins:
+  enabled:
+    - database
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("work_mcp.setup.shutil.which", lambda name: "/usr/bin/uv")
+
+    def slow_probe(config, timeout_seconds):
+        time.sleep(timeout_seconds + 0.2)
+        return {"database_name": config.default_database}
+
+    monkeypatch.setattr("work_mcp.setup.check_database_connectivity", slow_probe)
+
+    results = diagnose(tmp_path)
+
+    assert has_errors(results) is True
+    assert any(
+        result.message == "database connectivity failed: timed out after 1 seconds"
         for result in results
     )
 

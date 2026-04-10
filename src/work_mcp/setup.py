@@ -4,6 +4,8 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Thread
 from typing import Any
 
 import yaml
@@ -397,15 +399,16 @@ def diagnose(project_root: Path = PROJECT_ROOT) -> list[DiagnosticResult]:
                     )
 
         if _can_run_database_probe(env_values):
+            timeout_seconds = int(
+                env_values.get(
+                    "DB_CONNECT_TIMEOUT_SECONDS",
+                    str(DEFAULT_DB_CONNECT_TIMEOUT_SECONDS),
+                )
+            )
             try:
-                probe = check_database_connectivity(
+                probe = _probe_database_connectivity(
                     _build_database_settings(env_values),
-                    timeout_seconds=int(
-                        env_values.get(
-                            "DB_CONNECT_TIMEOUT_SECONDS",
-                            str(DEFAULT_DB_CONNECT_TIMEOUT_SECONDS),
-                        )
-                    ),
+                    timeout_seconds=timeout_seconds,
                 )
             except RuntimeError as exc:
                 results.append(
@@ -513,6 +516,41 @@ def _can_run_database_probe(env_values: dict[str, str]) -> bool:
     if db_type not in {DB_TYPE_MYSQL, DB_TYPE_SQLSERVER}:
         return False
     return all(env_values.get(key, "").strip() for key in required)
+
+
+def _probe_database_connectivity(
+    settings: DatabaseSettings,
+    *,
+    timeout_seconds: int,
+) -> dict[str, str]:
+    result_queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
+
+    def worker() -> None:
+        try:
+            result = check_database_connectivity(
+                settings,
+                timeout_seconds=timeout_seconds,
+            )
+        except Exception as exc:
+            result_queue.put((False, exc))
+            return
+        result_queue.put((True, result))
+
+    thread = Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+
+    if thread.is_alive():
+        raise RuntimeError(f"timed out after {timeout_seconds} seconds")
+
+    try:
+        ok, payload = result_queue.get_nowait()
+    except Empty as exc:
+        raise RuntimeError("probe finished without returning a result") from exc
+
+    if ok:
+        return payload  # type: ignore[return-value]
+    raise RuntimeError(str(payload))
 
 
 def _build_database_settings(env_values: dict[str, str]):
