@@ -42,10 +42,14 @@ ENV_KEYS_MANAGED_BY_INIT = (
     "DINGTALK_WEBHOOK_URL",
     "DINGTALK_SECRET",
 )
-DEFAULT_PLUGIN_SET = ("database", "log_search")
+OPTIONAL_PLUGIN_DATABASE = "database"
+OPTIONAL_PLUGIN_LOG_SEARCH = "log_search"
 OPTIONAL_PLUGIN_DINGTALK = "dingtalk"
+
+
 @dataclass(frozen=True)
 class SetupAnswers:
+    enable_database: bool
     db_type: str
     host: str
     port: int
@@ -55,6 +59,7 @@ class SetupAnswers:
     driver: str
     trust_server_certificate: bool
     connect_timeout_seconds: int
+    enable_log_search: bool
     log_base_dir: str
     enable_dingtalk: bool
     dingtalk_webhook_url: str
@@ -106,20 +111,23 @@ def load_existing_yaml(path: Path) -> dict[str, Any]:
 
 def build_updated_env(existing_env: dict[str, str], answers: SetupAnswers) -> dict[str, str]:
     updated = dict(existing_env)
-    updated["DB_TYPE"] = answers.db_type
-    updated["DB_HOST"] = answers.host
-    updated["DB_PORT"] = str(answers.port)
-    updated["DB_USER"] = answers.user
-    updated["DB_PASSWORD"] = answers.password
-    updated["DB_NAME"] = answers.database_name
-    updated["DB_CONNECT_TIMEOUT_SECONDS"] = str(answers.connect_timeout_seconds)
+    if answers.enable_database:
+        updated["DB_TYPE"] = answers.db_type
+        updated["DB_HOST"] = answers.host
+        updated["DB_PORT"] = str(answers.port)
+        updated["DB_USER"] = answers.user
+        updated["DB_PASSWORD"] = answers.password
+        updated["DB_NAME"] = answers.database_name
+        updated["DB_CONNECT_TIMEOUT_SECONDS"] = str(answers.connect_timeout_seconds)
 
-    if answers.db_type == DB_TYPE_SQLSERVER:
-        updated["DB_DRIVER"] = answers.driver
-        updated["DB_TRUST_SERVER_CERTIFICATE"] = format_bool(answers.trust_server_certificate)
-    else:
-        updated.pop("DB_DRIVER", None)
-        updated.pop("DB_TRUST_SERVER_CERTIFICATE", None)
+        if answers.db_type == DB_TYPE_SQLSERVER:
+            updated["DB_DRIVER"] = answers.driver
+            updated["DB_TRUST_SERVER_CERTIFICATE"] = format_bool(
+                answers.trust_server_certificate
+            )
+        else:
+            updated.pop("DB_DRIVER", None)
+            updated.pop("DB_TRUST_SERVER_CERTIFICATE", None)
 
     if answers.enable_dingtalk:
         updated["DINGTALK_WEBHOOK_URL"] = answers.dingtalk_webhook_url
@@ -137,20 +145,28 @@ def build_updated_yaml(existing_yaml: dict[str, Any], answers: SetupAnswers) -> 
     enabled_plugins = [
         plugin
         for plugin in _coerce_enabled_plugins(updated.get("plugins"))
-        if plugin != OPTIONAL_PLUGIN_DINGTALK and plugin != "jira"
+        if plugin
+        not in {
+            OPTIONAL_PLUGIN_DATABASE,
+            OPTIONAL_PLUGIN_LOG_SEARCH,
+            OPTIONAL_PLUGIN_DINGTALK,
+            "jira",
+        }
     ]
-    for plugin_name in DEFAULT_PLUGIN_SET:
-        if plugin_name not in enabled_plugins:
-            enabled_plugins.append(plugin_name)
+    if answers.enable_database:
+        enabled_plugins.append(OPTIONAL_PLUGIN_DATABASE)
+    if answers.enable_log_search:
+        enabled_plugins.append(OPTIONAL_PLUGIN_LOG_SEARCH)
     if answers.enable_dingtalk and OPTIONAL_PLUGIN_DINGTALK not in enabled_plugins:
         enabled_plugins.append(OPTIONAL_PLUGIN_DINGTALK)
     updated["plugins"] = {"enabled": enabled_plugins}
 
-    log_search_section = updated.get("log_search")
-    if not isinstance(log_search_section, dict):
-        log_search_section = {}
-    log_search_section["log_base_dir"] = answers.log_base_dir
-    updated["log_search"] = log_search_section
+    if answers.enable_log_search:
+        log_search_section = updated.get("log_search")
+        if not isinstance(log_search_section, dict):
+            log_search_section = {}
+        log_search_section["log_base_dir"] = answers.log_base_dir
+        updated["log_search"] = log_search_section
 
     return updated
 
@@ -270,100 +286,112 @@ def diagnose(project_root: Path = PROJECT_ROOT) -> list[DiagnosticResult]:
         results.append(DiagnosticResult("error", str(exc)))
         return results
 
-    db_type = env_values.get("DB_TYPE", "").strip().lower()
-    if not db_type:
-        results.append(DiagnosticResult("error", "DB_TYPE is missing from .env"))
-    elif db_type not in {DB_TYPE_MYSQL, DB_TYPE_SQLSERVER}:
-        results.append(
-            DiagnosticResult(
-                "error",
-                "DB_TYPE must be either 'mysql' or 'sqlserver'",
-            )
-        )
-    else:
-        results.append(DiagnosticResult("ok", f"DB_TYPE = {db_type}"))
-
-    required_env = ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"]
-    if db_type == DB_TYPE_SQLSERVER:
-        required_env.extend(["DB_DRIVER", "DB_TRUST_SERVER_CERTIFICATE"])
-    for key in required_env:
-        if env_values.get(key, "").strip():
-            results.append(DiagnosticResult("ok", f"{key} is set"))
-        else:
-            results.append(DiagnosticResult("error", f"{key} is missing from .env"))
-
-    timeout_value = env_values.get("DB_CONNECT_TIMEOUT_SECONDS", "").strip()
-    if timeout_value:
-        try:
-            validate_positive_int(timeout_value, "DB_CONNECT_TIMEOUT_SECONDS")
-        except RuntimeError as exc:
-            results.append(DiagnosticResult("error", str(exc)))
-        else:
-            results.append(DiagnosticResult("ok", "DB_CONNECT_TIMEOUT_SECONDS is valid"))
-    else:
-        results.append(DiagnosticResult("ok", "DB_CONNECT_TIMEOUT_SECONDS will use the default"))
-
     plugin_names = _coerce_enabled_plugins(yaml_values.get("plugins"))
     if plugin_names:
         results.append(DiagnosticResult("ok", f"enabled plugins: {', '.join(plugin_names)}"))
     else:
-        results.append(DiagnosticResult("error", "plugins.enabled is missing or empty in config.yaml"))
+        results.append(DiagnosticResult("ok", "enabled plugins: none"))
 
-    log_search_section = yaml_values.get("log_search")
-    if not isinstance(log_search_section, dict):
-        results.append(DiagnosticResult("error", "log_search section is missing from config.yaml"))
-    else:
-        raw_log_base_dir = str(log_search_section.get("log_base_dir", "")).strip()
-        try:
-            validated = validate_log_base_dir(raw_log_base_dir)
-        except RuntimeError as exc:
-            results.append(DiagnosticResult("error", str(exc)))
-        else:
-            results.append(DiagnosticResult("ok", f"log_base_dir = {validated}"))
-
-    if db_type == DB_TYPE_SQLSERVER:
-        installed_drivers = get_installed_odbc_drivers()
-        if installed_drivers is None:
+    if OPTIONAL_PLUGIN_DATABASE in plugin_names:
+        db_type = env_values.get("DB_TYPE", "").strip().lower()
+        if not db_type:
+            results.append(DiagnosticResult("error", "DB_TYPE is missing from .env"))
+        elif db_type not in {DB_TYPE_MYSQL, DB_TYPE_SQLSERVER}:
             results.append(
                 DiagnosticResult(
                     "error",
-                    "pyodbc is not installed. Run `uv sync` before using SQL Server.",
+                    "DB_TYPE must be either 'mysql' or 'sqlserver'",
                 )
             )
         else:
-            driver_name = env_values.get("DB_DRIVER", "").strip()
-            if driver_name and driver_name in installed_drivers:
-                results.append(DiagnosticResult("ok", f"ODBC driver found: {driver_name}"))
+            results.append(DiagnosticResult("ok", f"DB_TYPE = {db_type}"))
+
+        required_env = ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"]
+        if db_type == DB_TYPE_SQLSERVER:
+            required_env.extend(["DB_DRIVER", "DB_TRUST_SERVER_CERTIFICATE"])
+        for key in required_env:
+            if env_values.get(key, "").strip():
+                results.append(DiagnosticResult("ok", f"{key} is set"))
             else:
-                joined = ", ".join(installed_drivers) if installed_drivers else "none"
+                results.append(DiagnosticResult("error", f"{key} is missing from .env"))
+
+        timeout_value = env_values.get("DB_CONNECT_TIMEOUT_SECONDS", "").strip()
+        if timeout_value:
+            try:
+                validate_positive_int(timeout_value, "DB_CONNECT_TIMEOUT_SECONDS")
+            except RuntimeError as exc:
+                results.append(DiagnosticResult("error", str(exc)))
+            else:
+                results.append(
+                    DiagnosticResult("ok", "DB_CONNECT_TIMEOUT_SECONDS is valid")
+                )
+        else:
+            results.append(
+                DiagnosticResult("ok", "DB_CONNECT_TIMEOUT_SECONDS will use the default")
+            )
+
+        if db_type == DB_TYPE_SQLSERVER:
+            installed_drivers = get_installed_odbc_drivers()
+            if installed_drivers is None:
                 results.append(
                     DiagnosticResult(
                         "error",
-                        f"Configured ODBC driver was not found. Installed drivers: {joined}.",
+                        "pyodbc is not installed. Run `uv sync` before using SQL Server.",
+                    )
+                )
+            else:
+                driver_name = env_values.get("DB_DRIVER", "").strip()
+                if driver_name and driver_name in installed_drivers:
+                    results.append(
+                        DiagnosticResult("ok", f"ODBC driver found: {driver_name}")
+                    )
+                else:
+                    joined = ", ".join(installed_drivers) if installed_drivers else "none"
+                    results.append(
+                        DiagnosticResult(
+                            "error",
+                            f"Configured ODBC driver was not found. Installed drivers: {joined}.",
+                        )
+                    )
+
+        if _can_run_database_probe(env_values):
+            try:
+                probe = check_database_connectivity(
+                    _build_database_settings(env_values),
+                    timeout_seconds=int(
+                        env_values.get(
+                            "DB_CONNECT_TIMEOUT_SECONDS",
+                            str(DEFAULT_DB_CONNECT_TIMEOUT_SECONDS),
+                        )
+                    ),
+                )
+            except RuntimeError as exc:
+                results.append(
+                    DiagnosticResult("error", f"database connectivity failed: {exc}")
+                )
+            else:
+                database_name = str(probe.get("database_name", ""))
+                results.append(
+                    DiagnosticResult(
+                        "ok",
+                        f"database connectivity succeeded for {database_name or 'configured database'}",
                     )
                 )
 
-    if _can_run_database_probe(env_values):
-        try:
-            probe = check_database_connectivity(
-                _build_database_settings(env_values),
-                timeout_seconds=int(
-                    env_values.get(
-                        "DB_CONNECT_TIMEOUT_SECONDS",
-                        str(DEFAULT_DB_CONNECT_TIMEOUT_SECONDS),
-                    )
-                ),
-            )
-        except RuntimeError as exc:
-            results.append(DiagnosticResult("error", f"database connectivity failed: {exc}"))
-        else:
-            database_name = str(probe.get("database_name", ""))
+    if OPTIONAL_PLUGIN_LOG_SEARCH in plugin_names:
+        log_search_section = yaml_values.get("log_search")
+        if not isinstance(log_search_section, dict):
             results.append(
-                DiagnosticResult(
-                    "ok",
-                    f"database connectivity succeeded for {database_name or 'configured database'}",
-                )
+                DiagnosticResult("error", "log_search section is missing from config.yaml")
             )
+        else:
+            raw_log_base_dir = str(log_search_section.get("log_base_dir", "")).strip()
+            try:
+                validated = validate_log_base_dir(raw_log_base_dir)
+            except RuntimeError as exc:
+                results.append(DiagnosticResult("error", str(exc)))
+            else:
+                results.append(DiagnosticResult("ok", f"log_base_dir = {validated}"))
 
     if OPTIONAL_PLUGIN_DINGTALK in plugin_names:
         webhook = env_values.get("DINGTALK_WEBHOOK_URL", "").strip()

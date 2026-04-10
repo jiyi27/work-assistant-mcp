@@ -13,6 +13,7 @@ from work_mcp.setup import (
 
 def _answers(**overrides: object) -> SetupAnswers:
     defaults = dict(
+        enable_database=True,
         db_type="mysql",
         host="db.example.internal",
         port=3306,
@@ -22,6 +23,7 @@ def _answers(**overrides: object) -> SetupAnswers:
         driver="",
         trust_server_certificate=False,
         connect_timeout_seconds=5,
+        enable_log_search=True,
         log_base_dir="/tmp/work-logs",
         enable_dingtalk=False,
         dingtalk_webhook_url="",
@@ -62,6 +64,21 @@ def test_build_updated_yaml_sets_supported_plugins_and_preserves_existing_sectio
     assert updated["plugins"]["enabled"] == ["database", "log_search", "dingtalk"]
     assert updated["log_search"]["log_base_dir"] == "/tmp/work-logs"
     assert updated["jira"] == {"start_target_status": "In Progress"}
+
+
+def test_build_updated_yaml_allows_disabling_database_and_log_search() -> None:
+    existing_yaml = {
+        "plugins": {"enabled": ["database", "log_search"]},
+        "log_search": {"log_base_dir": "/tmp/existing-logs"},
+    }
+
+    updated = build_updated_yaml(
+        existing_yaml,
+        _answers(enable_database=False, enable_log_search=False),
+    )
+
+    assert updated["plugins"]["enabled"] == []
+    assert updated["log_search"] == {"log_base_dir": "/tmp/existing-logs"}
 
 
 def test_diagnose_reports_success_for_valid_mysql_configuration(
@@ -162,3 +179,21 @@ log_search:
     assert any(
         "Configured ODBC driver was not found." in result.message for result in results
     )
+
+
+def test_diagnose_accepts_empty_enabled_plugins(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "config.yaml").write_text(
+        """
+plugins:
+  enabled: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("work_mcp.setup.shutil.which", lambda name: "/usr/bin/uv")
+
+    results = diagnose(tmp_path)
+
+    assert has_errors(results) is False
+    assert any(result.message == "enabled plugins: none" for result in results)
