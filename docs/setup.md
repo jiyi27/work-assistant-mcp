@@ -89,7 +89,7 @@ make run HOST=127.0.0.1 PORT=9000
 http://<server-host>:<port>/mcp
 ```
 
-## 4. 补充说明
+## 4. 补充说明 (非必要)
 
 ### 4.1. Jira 状态校准
 
