@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 from work_mcp.config import (
     DatabaseSettings,
@@ -18,7 +19,8 @@ from work_mcp.tools.database.base import (
     QueryResult,
     TableNotFoundError,
 )
-from work_mcp.tools.database.factory import check_database_connectivity
+from work_mcp.tools.database.factory import check_database_connectivity, get_db_client
+from work_mcp.tools.database.mysql import MySqlClient
 from work_mcp.tools.database.sqlserver import SqlServerClient
 from work_mcp.tools.database.security import ReadOnlyViolation, validate_read_only_query
 from work_mcp.tools.database.service import DatabaseService
@@ -32,6 +34,17 @@ _DEFAULT_DATABASE = DatabaseSettings(
     password="secret",
     default_database="master",
     driver="ODBC Driver 18 for SQL Server",
+    trust_server_certificate=False,
+    connect_timeout_seconds=5,
+)
+_DEFAULT_MYSQL_DATABASE = DatabaseSettings(
+    db_type="mysql",
+    host="mysql.example.internal",
+    port=3306,
+    user="readonly_user",
+    password="secret",
+    default_database="app_db",
+    driver="",
     trust_server_certificate=False,
     connect_timeout_seconds=5,
 )
@@ -290,6 +303,12 @@ def test_check_database_connectivity_uses_db_type_factory(monkeypatch) -> None:
     assert len(connect_calls) == 1
 
 
+def test_get_db_client_returns_mysql_client() -> None:
+    client = get_db_client(_DEFAULT_MYSQL_DATABASE)
+
+    assert isinstance(client, MySqlClient)
+
+
 def test_sqlserver_client_reconnects_after_connection_error(monkeypatch) -> None:
     error_type = type("FakePyodbcError", (Exception,), {})
     first_connection = _StubConnection(
@@ -309,6 +328,85 @@ def test_sqlserver_client_reconnects_after_connection_error(monkeypatch) -> None
     monkeypatch.setattr("work_mcp.tools.database.sqlserver.pyodbc.Error", error_type)
 
     client = SqlServerClient(_DEFAULT_DATABASE)
+
+    assert client.list_databases() == ["app_db"]
+    assert len(connect_calls) == 2
+    assert first_connection.close_calls == 1
+    assert second_connection.execute_calls == 1
+
+
+def test_mysql_client_reuses_connection_per_database(monkeypatch) -> None:
+    connect_calls: list[dict[str, object]] = []
+    connection = _StubConnection(rows=[("app_db",)], error_type=Exception)
+
+    def fake_connect(**kwargs: object) -> _StubConnection:
+        connect_calls.append(kwargs)
+        return connection
+
+    monkeypatch.setattr(
+        "work_mcp.tools.database.mysql.pymysql",
+        SimpleNamespace(connect=fake_connect, MySQLError=Exception),
+    )
+
+    client = MySqlClient(_DEFAULT_MYSQL_DATABASE)
+
+    assert client.list_databases() == ["app_db"]
+    assert client.list_databases() == ["app_db"]
+    assert len(connect_calls) == 1
+    assert connect_calls[0]["database"] == "app_db"
+
+
+def test_check_mysql_database_connectivity_uses_db_type_factory(monkeypatch) -> None:
+    connect_calls: list[dict[str, object]] = []
+    connection = _StubConnection(
+        rows=[("mysql-server-1", "app_db", "readonly_user@%")],
+        error_type=Exception,
+    )
+
+    def fake_connect(**kwargs: object) -> _StubConnection:
+        connect_calls.append(kwargs)
+        return connection
+
+    monkeypatch.setattr(
+        "work_mcp.tools.database.mysql.pymysql",
+        SimpleNamespace(connect=fake_connect, MySQLError=Exception),
+    )
+
+    payload = check_database_connectivity(
+        _DEFAULT_MYSQL_DATABASE,
+        timeout_seconds=3,
+    )
+
+    assert payload == {
+        "server_name": "mysql-server-1",
+        "database_name": "app_db",
+        "login_name": "readonly_user@%",
+    }
+    assert len(connect_calls) == 1
+    assert connect_calls[0]["database"] == "app_db"
+
+
+def test_mysql_client_reconnects_after_connection_error(monkeypatch) -> None:
+    error_type = type("FakeMySQLError", (Exception,), {})
+    first_connection = _StubConnection(
+        rows=[("app_db",)],
+        fail_first_execute=True,
+        error_type=error_type,
+    )
+    second_connection = _StubConnection(rows=[("app_db",)], error_type=error_type)
+    issued_connections = [first_connection, second_connection]
+    connect_calls: list[dict[str, object]] = []
+
+    def fake_connect(**kwargs: object) -> _StubConnection:
+        connect_calls.append(kwargs)
+        return issued_connections.pop(0)
+
+    monkeypatch.setattr(
+        "work_mcp.tools.database.mysql.pymysql",
+        SimpleNamespace(connect=fake_connect, MySQLError=error_type),
+    )
+
+    client = MySqlClient(_DEFAULT_MYSQL_DATABASE)
 
     assert client.list_databases() == ["app_db"]
     assert len(connect_calls) == 2

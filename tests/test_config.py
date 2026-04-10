@@ -373,6 +373,61 @@ plugins:
     assert settings.database.connect_timeout_seconds == 9
 
 
+def test_get_settings_reads_mysql_env_when_database_plugin_enabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for env_name in (
+        "DB_TYPE",
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME",
+        "DB_DRIVER",
+        "DB_TRUST_SERVER_CERTIFICATE",
+        "DB_CONNECT_TIMEOUT_SECONDS",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        """
+plugins:
+  enabled:
+    - database
+""".strip(),
+        encoding="utf-8",
+    )
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "\n".join(
+            [
+                "DB_TYPE=mysql",
+                "DB_HOST=mysql.example.internal",
+                "DB_USER=readonly_user",
+                "DB_PASSWORD=secret",
+                "DB_NAME=app_db",
+                "DB_CONNECT_TIMEOUT_SECONDS=9",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", tmp_path)
+
+    settings = config_module.get_settings()
+
+    assert settings.enabled_plugins == ("database",)
+    assert settings.database is not None
+    assert settings.database.db_type == "mysql"
+    assert settings.database.host == "mysql.example.internal"
+    assert settings.database.port == 3306
+    assert settings.database.user == "readonly_user"
+    assert settings.database.password == "secret"
+    assert settings.database.default_database == "app_db"
+    assert settings.database.driver == ""
+    assert settings.database.trust_server_certificate is False
+    assert settings.database.connect_timeout_seconds == 9
+
+
 def test_get_settings_requires_database_env_when_database_plugin_enabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

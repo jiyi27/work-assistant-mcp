@@ -16,7 +16,13 @@ KNOWN_PLUGINS = frozenset({"database", "dingtalk", "jira", "log_search"})
 DEFAULT_TRANSPORT = "stdio"
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8000
-DEFAULT_DB_PORT = 1433
+DB_TYPE_SQLSERVER = "sqlserver"
+DB_TYPE_MYSQL = "mysql"
+SUPPORTED_DB_TYPES = frozenset({DB_TYPE_SQLSERVER, DB_TYPE_MYSQL})
+DEFAULT_DB_PORTS = {
+    DB_TYPE_SQLSERVER: 1433,
+    DB_TYPE_MYSQL: 3306,
+}
 DEFAULT_DB_DRIVER = "ODBC Driver 18 for SQL Server"
 DEFAULT_DB_CONNECT_TIMEOUT_SECONDS = 5
 DEFAULT_STARTUP_HEALTHCHECK_TIMEOUT_SECONDS = 10
@@ -230,6 +236,20 @@ def _read_int_env(name: str, default: int) -> int:
         ) from exc
 
 
+def _read_database_type() -> str:
+    return os.getenv("DB_TYPE", "").strip().lower()
+
+
+def _default_db_port(db_type: str) -> int:
+    return DEFAULT_DB_PORTS.get(db_type, DEFAULT_DB_PORTS[DB_TYPE_SQLSERVER])
+
+
+def _default_db_driver(db_type: str) -> str:
+    if db_type == DB_TYPE_SQLSERVER:
+        return DEFAULT_DB_DRIVER
+    return ""
+
+
 def validate_settings(settings: Settings) -> None:
     errors: list[str] = []
 
@@ -284,9 +304,11 @@ def validate_settings(settings: Settings) -> None:
         if settings.database is None:
             errors.append("database: missing database settings in environment or .env")
         else:
-            if settings.database.db_type != "sqlserver":
+            if settings.database.db_type not in SUPPORTED_DB_TYPES:
+                supported_values = ", ".join(sorted(SUPPORTED_DB_TYPES))
                 errors.append(
-                    "database: DB_TYPE must be one of the supported values: sqlserver"
+                    "database: DB_TYPE must be one of the supported values: "
+                    f"{supported_values}"
                 )
             if not settings.database.host:
                 errors.append("database: missing DB_HOST in environment or .env")
@@ -296,7 +318,10 @@ def validate_settings(settings: Settings) -> None:
                 errors.append("database: missing DB_PASSWORD in environment or .env")
             if not settings.database.default_database:
                 errors.append("database: missing DB_NAME in environment or .env")
-            if not settings.database.driver:
+            if (
+                settings.database.db_type == DB_TYPE_SQLSERVER
+                and not settings.database.driver
+            ):
                 errors.append("database: missing DB_DRIVER in environment or .env")
             if settings.database.port <= 0:
                 errors.append("database: DB_PORT must be greater than 0")
@@ -326,14 +351,15 @@ def get_settings() -> Settings:
     jira_base_url = os.getenv("JIRA_BASE_URL", "").strip() or None
     jira_api_token = os.getenv("JIRA_API_TOKEN", "").strip() or None
     jira_project_key = os.getenv("JIRA_PROJECT_KEY", "").strip() or None
+    database_type = _read_database_type()
     database = DatabaseSettings(
-        db_type=os.getenv("DB_TYPE", "").strip().lower(),
+        db_type=database_type,
         host=os.getenv("DB_HOST", "").strip(),
-        port=_read_int_env("DB_PORT", DEFAULT_DB_PORT),
+        port=_read_int_env("DB_PORT", _default_db_port(database_type)),
         user=os.getenv("DB_USER", "").strip(),
         password=os.getenv("DB_PASSWORD", "").strip(),
         default_database=os.getenv("DB_NAME", "").strip(),
-        driver=os.getenv("DB_DRIVER", DEFAULT_DB_DRIVER).strip(),
+        driver=os.getenv("DB_DRIVER", _default_db_driver(database_type)).strip(),
         trust_server_certificate=_read_bool_env(
             "DB_TRUST_SERVER_CERTIFICATE", False
         ),

@@ -60,10 +60,10 @@ Do not load them from `config.yaml`.
 ```text
 DB_TYPE=sqlserver
 DB_HOST=
-DB_PORT=1433
 DB_USER=
 DB_PASSWORD=
 DB_NAME=
+DB_PORT=1433
 DB_DRIVER=ODBC Driver 18 for SQL Server
 DB_TRUST_SERVER_CERTIFICATE=false
 DB_CONNECT_TIMEOUT_SECONDS=5
@@ -71,6 +71,10 @@ DB_CONNECT_TIMEOUT_SECONDS=5
 
 `DB_NAME` is the default database for connection bootstrap. Individual tools may still
 target another database when supported by the engine.
+
+- `DB_TYPE` supports `sqlserver` and `mysql`.
+- `DB_PORT` defaults to `1433` for `sqlserver` and `3306` for `mysql`.
+- `DB_DRIVER` is required for `sqlserver` and ignored for `mysql`.
 
 ### New dataclass in `config.py`
 
@@ -95,7 +99,8 @@ Add it to `Settings` as `database: DatabaseSettings | None`.
 When `"database"` is in `enabled_plugins`:
 
 - `DB_TYPE` must be present and supported.
-- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `DB_DRIVER` must be non-empty.
+- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` must be non-empty.
+- `DB_DRIVER` must be non-empty for `sqlserver`.
 - `DB_PORT` and `DB_CONNECT_TIMEOUT_SECONDS` must be positive integers.
 
 `KNOWN_PLUGINS` gains `"database"`.
@@ -124,11 +129,13 @@ must still be read-only.
 ## Factory
 
 ```python
-SUPPORTED_DB_TYPES = frozenset({"sqlserver"})
+SUPPORTED_DB_TYPES = frozenset({"sqlserver", "mysql"})
 
 def get_db_client(config: DatabaseSettings) -> AbstractDatabaseClient:
     if config.db_type == "sqlserver":
         return SqlServerClient(config)
+    if config.db_type == "mysql":
+        return MySqlClient(config)
     raise ValueError(f"Unsupported db_type: {config.db_type!r}")
 ```
 
