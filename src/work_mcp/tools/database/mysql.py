@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+from collections.abc import Sequence
 from contextlib import closing
 from threading import RLock
 from typing import Any, Callable, NoReturn, Protocol, TypeVar, cast
@@ -75,18 +76,37 @@ CONNECTION_ERROR_CODES = {
 }
 
 T = TypeVar("T")
+_MySqlRow = Sequence[object]
+_MySqlDescription = Sequence[Sequence[object]]
+
+
+def _ensure_pymysql_available() -> None:
+    if pymysql is None:
+        raise DatabaseConnectionError(
+            "MySQL driver is not installed. Add the 'pymysql' package to the environment."
+        )
+
+
+def _mysql_error_type() -> type[Exception]:
+    if pymysql is None:
+        return Exception
+    return cast(type[Exception], pymysql.MySQLError)
+
+
+def _coerce_mysql_connection(raw_connection: object) -> _MySqlConnection:
+    return cast(_MySqlConnection, raw_connection)
 
 
 class _MySqlCursor(Protocol):
-    description: Any
+    description: _MySqlDescription | None
 
     def execute(self, sql: str, params: object = None) -> object: ...
 
-    def fetchall(self) -> list[object]: ...
+    def fetchall(self) -> list[_MySqlRow]: ...
 
-    def fetchone(self) -> object | None: ...
+    def fetchone(self) -> _MySqlRow | None: ...
 
-    def fetchmany(self, size: int) -> list[object]: ...
+    def fetchmany(self, size: int) -> list[_MySqlRow]: ...
 
     def close(self) -> None: ...
 
@@ -135,7 +155,7 @@ class MySqlClient(AbstractDatabaseClient):
         def operation(cursor: _MySqlCursor) -> QueryResult:
             try:
                 cursor.execute(sql)
-            except self._driver_error_type() as exc:
+            except _mysql_error_type() as exc:
                 self._raise_for_mysql_error(exc, database=database)
 
             description = cursor.description or []
@@ -174,7 +194,7 @@ class MySqlClient(AbstractDatabaseClient):
             try:
                 with closing(self._get_connection(resolved_database).cursor()) as cursor:
                     return operation(cursor)
-            except self._driver_error_type() as exc:
+            except _mysql_error_type() as exc:
                 if self._is_connection_error(exc):
                     self._discard_connection(resolved_database)
                     try:
@@ -182,7 +202,7 @@ class MySqlClient(AbstractDatabaseClient):
                             self._get_connection(resolved_database, force_new=True).cursor()
                         ) as cursor:
                             return operation(cursor)
-                    except self._driver_error_type() as retry_exc:
+                    except _mysql_error_type() as retry_exc:
                         self._raise_for_mysql_error(retry_exc, database=database)
                 self._raise_for_mysql_error(exc, database=database)
 
@@ -219,10 +239,10 @@ class MySqlClient(AbstractDatabaseClient):
             return lock
 
     def _connect(self, database: str) -> _MySqlConnection:
-        self._ensure_driver_available()
+        _ensure_pymysql_available()
         try:
-            connection = cast(
-                _MySqlConnection,
+            raw_connection = cast(
+                object,
                 pymysql.connect(
                     host=self._settings.host,
                     port=self._settings.port,
@@ -234,12 +254,12 @@ class MySqlClient(AbstractDatabaseClient):
                     charset="utf8mb4",
                 ),
             )
-            if connection is None:
+            if raw_connection is None:
                 raise DatabaseConnectionError(
                     f"MySQL connection failed for database '{database}': pymysql.connect() returned None."
                 )
-            return connection
-        except self._driver_error_type() as exc:
+            return _coerce_mysql_connection(raw_connection)
+        except _mysql_error_type() as exc:
             self._raise_for_mysql_error(exc, database=database)
 
     def _raise_for_mysql_error(
@@ -267,7 +287,7 @@ class MySqlClient(AbstractDatabaseClient):
         code, _ = _format_mysql_error(exc)
         return code in CONNECTION_ERROR_CODES
 
-    def _serialize_schema_row(self, row: Any) -> dict[str, Any]:
+    def _serialize_schema_row(self, row: _MySqlRow) -> dict[str, Any]:
         return {
             "column": str(row[0]),
             "type": str(row[1]),
@@ -279,18 +299,6 @@ class MySqlClient(AbstractDatabaseClient):
         if isinstance(value, (bytes, bytearray)):
             return bytes(value).hex()
         return value
-
-    def _ensure_driver_available(self) -> None:
-        if pymysql is None:
-            raise DatabaseConnectionError(
-                "MySQL driver is not installed. Add the 'pymysql' package to the environment."
-            )
-
-    def _driver_error_type(self) -> type[Exception]:
-        if pymysql is None:
-            return Exception
-        return cast(type[Exception], pymysql.MySQLError)
-
 
 def _format_mysql_error(exc: Exception) -> tuple[int, str]:
     code = 0
@@ -310,27 +318,26 @@ def probe_mysql_connectivity(
     timeout_seconds: int,
 ) -> dict[str, str]:
     client = MySqlClient(settings)
-    client._ensure_driver_available()
+    _ensure_pymysql_available()
     try:
-        with closing(
-            cast(
-                _MySqlConnection,
-                pymysql.connect(
-                    host=settings.host,
-                    port=settings.port,
-                    user=settings.user,
-                    password=settings.password,
-                    database=settings.default_database,
-                    connect_timeout=timeout_seconds,
-                    autocommit=True,
-                    charset="utf8mb4",
-                ),
-            )
-        ) as connection:
+        raw_connection = cast(
+            object,
+            pymysql.connect(
+                host=settings.host,
+                port=settings.port,
+                user=settings.user,
+                password=settings.password,
+                database=settings.default_database,
+                connect_timeout=timeout_seconds,
+                autocommit=True,
+                charset="utf8mb4",
+            ),
+        )
+        with closing(_coerce_mysql_connection(raw_connection)) as connection:
             with closing(connection.cursor()) as cursor:
                 cursor.execute(CONNECTIVITY_SQL)
                 row = cursor.fetchone()
-    except client._driver_error_type() as exc:
+    except _mysql_error_type() as exc:
         _, message = _format_mysql_error(exc)
         raise RuntimeError(f"connectivity check failed: {message}") from exc
 
