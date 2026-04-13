@@ -49,10 +49,15 @@ make init
     "work-mcp": {
       "command": "uv", 
       "args": ["run", "work-mcp"], 
-      "cwd": "/absolute/path/to/work-mcp"
+      "cwd": "/absolute/path/to/work-mcp/.venv/bin/work-mcp"
     }
   }
 }
+```
+
+比如 Claude Code 直接执行:
+```bash
+claude mcp add work-mcp -- /Path/to/work-mcp/.venv/bin/work-mcp
 ```
 
 配置完成后, 客户端会自动拉起 `work-mcp`, 通常不需要你手动启动 mcp server

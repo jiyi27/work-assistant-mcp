@@ -15,6 +15,7 @@ from .base import (
     QueryResult,
     TableNotFoundError,
 )
+from .normalize import normalize_database_value
 
 try:
     import pymysql
@@ -164,9 +165,7 @@ def _serialize_schema_row(row: _MySqlRow) -> dict[str, Any]:
 
 
 def _normalize_value(value: Any) -> Any:
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(value).hex()
-    return value
+    return normalize_database_value(value)
 
 
 class MySqlClient(AbstractDatabaseClient):

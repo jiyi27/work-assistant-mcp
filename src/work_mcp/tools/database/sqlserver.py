@@ -16,6 +16,7 @@ from .base import (
     QueryResult,
     TableNotFoundError,
 )
+from .normalize import normalize_database_value
 
 LIST_DATABASES_SQL = """
 SELECT name
@@ -279,9 +280,7 @@ class SqlServerClient(AbstractDatabaseClient):
         }
 
     def _normalize_value(self, value: Any) -> Any:
-        if isinstance(value, bytes):
-            return value.hex()
-        return value
+        return normalize_database_value(value)
 
 
 def _format_pyodbc_error(exc: pyodbc.Error) -> str:

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 from work_mcp.config import (
     DatabaseSettings,
@@ -21,6 +24,7 @@ from work_mcp.tools.database.base import (
 )
 from work_mcp.tools.database.factory import check_database_connectivity, get_db_client
 from work_mcp.tools.database.mysql import MySqlClient
+from work_mcp.tools.database.normalize import normalize_database_value
 from work_mcp.tools.database.sqlserver import SqlServerClient
 from work_mcp.tools.database.security import ReadOnlyViolation, validate_read_only_query
 from work_mcp.tools.database.service import DatabaseService
@@ -206,6 +210,21 @@ def test_database_tools_are_registered_when_database_plugin_enabled() -> None:
     ]
 
 
+def test_normalize_database_value_returns_json_safe_values() -> None:
+    assert normalize_database_value(bytes.fromhex("00ff")) == "00ff"
+    assert normalize_database_value(bytearray(b"\x01\x02")) == "0102"
+    assert normalize_database_value(memoryview(b"\x03\x04")) == "0304"
+    assert normalize_database_value(datetime(2024, 1, 2, 3, 4, 5)) == "2024-01-02T03:04:05"
+    assert normalize_database_value(date(2024, 1, 2)) == "2024-01-02"
+    assert normalize_database_value(time(3, 4, 5)) == "03:04:05"
+    assert normalize_database_value(timedelta(hours=2, minutes=3)) == "2:03:00"
+    assert normalize_database_value(Decimal("99.90")) == "99.90"
+    assert normalize_database_value(UUID("12345678-1234-5678-1234-567812345678")) == (
+        "12345678-1234-5678-1234-567812345678"
+    )
+    assert normalize_database_value("plain-text") == "plain-text"
+
+
 class _StubCursor:
     def __init__(self, connection: "_StubConnection") -> None:
         self._connection = connection
@@ -335,6 +354,41 @@ def test_sqlserver_client_reconnects_after_connection_error(monkeypatch) -> None
     assert second_connection.execute_calls == 1
 
 
+def test_sqlserver_client_normalizes_query_values(monkeypatch) -> None:
+    connect_calls: list[str] = []
+    connection = _StubConnection(
+        rows=[
+            (
+                datetime(2024, 1, 2, 3, 4, 5),
+                date(2024, 1, 2),
+                time(3, 4, 5),
+                Decimal("19.95"),
+                b"\xaa\xbb",
+            )
+        ],
+        error_type=Exception,
+    )
+
+    def fake_connect(connection_string: str, **_: object) -> _StubConnection:
+        connect_calls.append(connection_string)
+        return connection
+
+    monkeypatch.setattr("work_mcp.tools.database.sqlserver.pyodbc.connect", fake_connect)
+
+    client = SqlServerClient(_DEFAULT_DATABASE)
+
+    result = client.execute_query("app_db", "SELECT * FROM orders", 5)
+
+    assert len(connect_calls) == 1
+    assert result.rows == [[
+        "2024-01-02T03:04:05",
+        "2024-01-02",
+        "03:04:05",
+        "19.95",
+        "aabb",
+    ]]
+
+
 def test_mysql_client_reuses_connection_per_database(monkeypatch) -> None:
     connect_calls: list[dict[str, object]] = []
     connection = _StubConnection(rows=[("app_db",)], error_type=Exception)
@@ -412,3 +466,41 @@ def test_mysql_client_reconnects_after_connection_error(monkeypatch) -> None:
     assert len(connect_calls) == 2
     assert first_connection.close_calls == 1
     assert second_connection.execute_calls == 1
+
+
+def test_mysql_client_normalizes_query_values(monkeypatch) -> None:
+    connect_calls: list[dict[str, object]] = []
+    connection = _StubConnection(
+        rows=[
+            (
+                datetime(2024, 1, 2, 3, 4, 5),
+                date(2024, 1, 2),
+                Decimal("99.90"),
+                timedelta(minutes=90),
+                bytearray(b"\x00\x10"),
+            )
+        ],
+        error_type=Exception,
+    )
+
+    def fake_connect(**kwargs: object) -> _StubConnection:
+        connect_calls.append(kwargs)
+        return connection
+
+    monkeypatch.setattr(
+        "work_mcp.tools.database.mysql.pymysql",
+        SimpleNamespace(connect=fake_connect, MySQLError=Exception),
+    )
+
+    client = MySqlClient(_DEFAULT_MYSQL_DATABASE)
+
+    result = client.execute_query("app_db", "SELECT * FROM products", 5)
+
+    assert len(connect_calls) == 1
+    assert result.rows == [[
+        "2024-01-02T03:04:05",
+        "2024-01-02",
+        "99.90",
+        "1:30:00",
+        "0010",
+    ]]

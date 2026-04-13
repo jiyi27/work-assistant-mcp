@@ -34,7 +34,6 @@ database:
   port: 1433
   user: readonly_user
   password: your_password_here
-  name: master
   driver: ODBC Driver 18 for SQL Server
   trust_server_certificate: true
   connect_timeout_seconds: 5
@@ -53,16 +52,14 @@ database:
   port: 3306
   user: readonly_user
   password: your_password_here
-  name: your_database
   connect_timeout_seconds: 5
 ```
 
 - `user` must be a read-only database account. Tool-layer SQL validation is only defense in depth and is not the primary safety boundary.
-- `name` is the default database used for connection bootstrap. The tools can still inspect other visible databases.
 - SQL Server requires the Microsoft ODBC Driver installed on the host. `driver` must match the installed driver name.
 - `trust_server_certificate: true` is only appropriate for environments where you intentionally bypass certificate validation (SQL Server only).
 - MySQL uses `pymysql` — no ODBC driver needed. `driver` and `trust_server_certificate` are ignored for MySQL.
-- When `startup.healthcheck.enabled=true`, the database plugin performs a live startup probe against the configured database and executes a lightweight SQL query against `name`. Startup stops if the connection or query fails.
+- When `startup.healthcheck.enabled=true`, the database plugin performs a live connectivity probe on startup. Startup stops if the connection fails.
 
 ### DingTalk
 
