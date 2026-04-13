@@ -28,6 +28,7 @@ from work_mcp.tools.database.normalize import normalize_database_value
 from work_mcp.tools.database.sqlserver import SqlServerClient
 from work_mcp.tools.database.security import ReadOnlyViolation, validate_read_only_query
 from work_mcp.tools.database.service import DatabaseService
+from work_mcp.tools.database.strings import QUERY_MAX_LIMIT
 
 _DEFAULT_SERVER = ServerSettings(transport="stdio", host=None, port=None)
 _DEFAULT_DATABASE = DatabaseSettings(
@@ -102,18 +103,39 @@ class FakeDatabaseClient(AbstractDatabaseClient):
             }
         ]
 
-    def execute_query(self, database: str, sql: str, limit: int) -> QueryResult:
+    def execute_query(self, database: str, sql: str) -> QueryResult:
         if database == "missing_db":
             raise DatabaseNotFoundError("missing")
         if "bad_column" in sql:
             raise QueryExecutionError("Invalid column name 'bad_column'.")
         if "boom" in sql:
             raise DatabaseConnectionError("connection lost")
+        rows = [[1, "pending"], [2, "done"], [3, "failed"]]
         return QueryResult(
             columns=["id", "status"],
-            rows=[[1, "pending"]],
-            row_count=1,
-            truncated=False,
+            rows=rows[:QUERY_MAX_LIMIT],
+            row_count=len(rows[:QUERY_MAX_LIMIT]),
+            truncated=len(rows) > QUERY_MAX_LIMIT,
+        )
+
+
+class FakeDatabaseClientWithLargeResult(AbstractDatabaseClient):
+    def list_databases(self) -> list[str]:
+        return ["app_db"]
+
+    def list_tables(self, database: str) -> list[str]:
+        return ["orders"]
+
+    def get_table_schema(self, database: str, table: str) -> list[dict[str, object]]:
+        return []
+
+    def execute_query(self, database: str, sql: str) -> QueryResult:
+        rows = [[item, f"status-{item}"] for item in range(QUERY_MAX_LIMIT + 5)]
+        return QueryResult(
+            columns=["id", "status"],
+            rows=rows[:QUERY_MAX_LIMIT],
+            row_count=QUERY_MAX_LIMIT,
+            truncated=True,
         )
 
 
@@ -159,20 +181,20 @@ def test_database_service_returns_empty_database_hint() -> None:
 def test_database_service_returns_structured_query_error() -> None:
     service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
 
-    structured = service.execute_query("app_db", "SELECT bad_column FROM users", 5)
+    structured = service.execute_query("app_db", "SELECT bad_column FROM users")
 
     assert structured == {
         "success": False,
         "error_type": "query_error",
         "message": "Invalid column name 'bad_column'.",
-        "hint": "The query failed. Call db_get_table_schema to verify table and column names, then retry with a corrected SELECT statement. Retry at most once; if still failing, stop and tell the user the error message above.",
+        "hint": "The query failed. Verify table and column names, then check whether the SQL matches SQL Server syntax and retry once. If the query still fails after one correction, stop and tell the user the error message above.",
     }
 
 
 def test_database_service_returns_internal_error_for_connection_failure() -> None:
     service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
 
-    structured = service.execute_query("app_db", "SELECT boom FROM users", 5)
+    structured = service.execute_query("app_db", "SELECT boom FROM users")
 
     assert structured == {
         "success": False,
@@ -185,15 +207,46 @@ def test_database_service_returns_internal_error_for_connection_failure() -> Non
 def test_database_service_returns_successful_query_result() -> None:
     service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
 
-    structured = service.execute_query("app_db", "SELECT id, status FROM users", 5)
+    structured = service.execute_query("app_db", "SELECT id, status FROM users")
 
     assert structured == {
         "success": True,
         "database": "app_db",
         "columns": ["id", "status"],
-        "rows": [[1, "pending"]],
-        "row_count": 1,
+        "rows": [[1, "pending"], [2, "done"], [3, "failed"]],
+        "row_count": 3,
         "truncated": False,
+        "hint": "The query result fit within the tool's response limit. If you need a different slice of data, refine the SQL with WHERE clauses, a stable ORDER BY clause, or SQL Server-compatible limiting syntax for SQL Server.",
+    }
+
+
+def test_database_service_returns_truncated_query_hint() -> None:
+    service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
+    service._client = FakeDatabaseClientWithLargeResult()
+
+    structured = service.execute_query("app_db", "SELECT id, status FROM users")
+
+    assert structured == {
+        "success": True,
+        "database": "app_db",
+        "columns": ["id", "status"],
+        "rows": [[item, f"status-{item}"] for item in range(QUERY_MAX_LIMIT)],
+        "row_count": QUERY_MAX_LIMIT,
+        "truncated": True,
+        "hint": f"The result was truncated to keep a single response to at most {QUERY_MAX_LIMIT} rows and protect agent context. If you need a smaller or more specific result, refine the SQL with WHERE clauses and a stable ORDER BY clause. The current database engine is SQL Server; use SQL Server-compatible limiting or pagination syntax if needed.",
+    }
+
+
+def test_database_service_returns_mysql_specific_query_error_hint() -> None:
+    service = DatabaseService(_make_settings(database=_DEFAULT_MYSQL_DATABASE), client=FakeDatabaseClient())
+
+    structured = service.execute_query("app_db", "SELECT bad_column FROM users")
+
+    assert structured == {
+        "success": False,
+        "error_type": "query_error",
+        "message": "Invalid column name 'bad_column'.",
+        "hint": "The query failed. Verify table and column names, then check whether the SQL matches MySQL syntax and retry once. If the query still fails after one correction, stop and tell the user the error message above.",
     }
 
 
@@ -208,6 +261,26 @@ def test_database_tools_are_registered_when_database_plugin_enabled() -> None:
         "db_get_table_schema",
         "db_execute_query",
     ]
+
+
+def test_db_execute_query_description_mentions_sqlserver_syntax() -> None:
+    mcp = create_mcp(_make_settings())
+
+    tools = asyncio.run(mcp.list_tools())
+    execute_query_tool = next(tool for tool in tools if tool.name == "db_execute_query")
+
+    assert "SQL Server database" in execute_query_tool.description
+    assert "SQL Server-compatible limiting or pagination syntax" in execute_query_tool.description
+
+
+def test_db_execute_query_description_mentions_mysql_syntax() -> None:
+    mcp = create_mcp(_make_settings(database=_DEFAULT_MYSQL_DATABASE))
+
+    tools = asyncio.run(mcp.list_tools())
+    execute_query_tool = next(tool for tool in tools if tool.name == "db_execute_query")
+
+    assert "MySQL database" in execute_query_tool.description
+    assert "MySQL-compatible limiting or pagination syntax" in execute_query_tool.description
 
 
 def test_normalize_database_value_returns_json_safe_values() -> None:
@@ -230,6 +303,7 @@ class _StubCursor:
         self._connection = connection
         self.description = [("name",)]
         self._rows: list[tuple[object, ...]] = []
+        self._position = 0
 
     def execute(self, sql: str, *params: object) -> None:
         self._connection.execute_calls += 1
@@ -238,6 +312,7 @@ class _StubCursor:
             self._connection.fail_first_execute = False
             raise self._connection.error_type("08S01", "Communication link failure")
         self._rows = self._connection.rows
+        self._position = 0
 
     def fetchall(self) -> list[tuple[object, ...]]:
         return list(self._rows)
@@ -248,7 +323,10 @@ class _StubCursor:
         return self._rows[0]
 
     def fetchmany(self, size: int) -> list[tuple[object, ...]]:
-        return list(self._rows[:size])
+        start = self._position
+        end = start + size
+        self._position = min(end, len(self._rows))
+        return list(self._rows[start:end])
 
     def close(self) -> None:
         self._connection.closed_cursors += 1
@@ -377,7 +455,7 @@ def test_sqlserver_client_normalizes_query_values(monkeypatch) -> None:
 
     client = SqlServerClient(_DEFAULT_DATABASE)
 
-    result = client.execute_query("app_db", "SELECT * FROM orders", 5)
+    result = client.execute_query("app_db", "SELECT * FROM orders")
 
     assert len(connect_calls) == 1
     assert result.rows == [[
@@ -494,7 +572,7 @@ def test_mysql_client_normalizes_query_values(monkeypatch) -> None:
 
     client = MySqlClient(_DEFAULT_MYSQL_DATABASE)
 
-    result = client.execute_query("app_db", "SELECT * FROM products", 5)
+    result = client.execute_query("app_db", "SELECT * FROM products")
 
     assert len(connect_calls) == 1
     assert result.rows == [[
@@ -504,3 +582,46 @@ def test_mysql_client_normalizes_query_values(monkeypatch) -> None:
         "1:30:00",
         "0010",
     ]]
+
+
+def test_sqlserver_client_caps_rows_at_query_max_limit(monkeypatch) -> None:
+    connection = _StubConnection(
+        rows=[(str(index),) for index in range(QUERY_MAX_LIMIT + 3)],
+        error_type=Exception,
+    )
+
+    def fake_connect(connection_string: str, **_: object) -> _StubConnection:
+        return connection
+
+    monkeypatch.setattr("work_mcp.tools.database.sqlserver.pyodbc.connect", fake_connect)
+
+    client = SqlServerClient(_DEFAULT_DATABASE)
+
+    result = client.execute_query("app_db", "SELECT * FROM orders ORDER BY name")
+
+    assert result.rows == [[str(index)] for index in range(QUERY_MAX_LIMIT)]
+    assert result.row_count == QUERY_MAX_LIMIT
+    assert result.truncated is True
+
+
+def test_mysql_client_caps_rows_at_query_max_limit(monkeypatch) -> None:
+    connection = _StubConnection(
+        rows=[(str(index),) for index in range(QUERY_MAX_LIMIT + 3)],
+        error_type=Exception,
+    )
+
+    def fake_connect(**_: object) -> _StubConnection:
+        return connection
+
+    monkeypatch.setattr(
+        "work_mcp.tools.database.mysql.pymysql",
+        SimpleNamespace(connect=fake_connect, MySQLError=Exception),
+    )
+
+    client = MySqlClient(_DEFAULT_MYSQL_DATABASE)
+
+    result = client.execute_query("app_db", "SELECT * FROM orders ORDER BY name")
+
+    assert result.rows == [[str(index)] for index in range(QUERY_MAX_LIMIT)]
+    assert result.row_count == QUERY_MAX_LIMIT
+    assert result.truncated is True

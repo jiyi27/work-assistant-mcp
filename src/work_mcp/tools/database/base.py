@@ -47,5 +47,5 @@ class AbstractDatabaseClient(ABC):
         """Return table schema details."""
 
     @abstractmethod
-    def execute_query(self, database: str, sql: str, limit: int) -> QueryResult:
+    def execute_query(self, database: str, sql: str) -> QueryResult:
         """Execute a validated read-only query."""

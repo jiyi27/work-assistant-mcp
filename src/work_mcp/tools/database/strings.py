@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ...config import DB_TYPE_MYSQL, DB_TYPE_SQLSERVER
 from ...hints import (
     STOP_AND_NOTIFY_USER_INSTRUCTION,
     STOP_NOTIFY_AND_ASK_USER_HOW_TO_PROCEED_INSTRUCTION,
@@ -10,8 +11,7 @@ TOOL_DB_LIST_TABLES = "db_list_tables"
 TOOL_DB_GET_TABLE_SCHEMA = "db_get_table_schema"
 TOOL_DB_EXECUTE_QUERY = "db_execute_query"
 
-QUERY_DEFAULT_LIMIT = 5
-QUERY_MAX_LIMIT = 50
+QUERY_MAX_LIMIT = 10
 
 DB_LIST_DATABASES_DESCRIPTION = f"""\
 List all available databases.
@@ -36,12 +36,65 @@ Use this when you are unsure of the exact column names or data types before writ
 query. Confirms available columns, data types, nullability, and primary-key fields.
 """
 
-DB_EXECUTE_QUERY_DESCRIPTION = f"""\
-Execute a read-only SELECT query against a database and return structured rows.
+def database_engine_label(db_type: str) -> str:
+    if db_type == DB_TYPE_MYSQL:
+        return "MySQL"
+    if db_type == DB_TYPE_SQLSERVER:
+        return "SQL Server"
+    return "the configured database"
+
+
+def _database_syntax_label(db_type: str) -> str:
+    if db_type == DB_TYPE_MYSQL:
+        return "MySQL-compatible"
+    if db_type == DB_TYPE_SQLSERVER:
+        return "SQL Server-compatible"
+    return "database-compatible"
+
+
+def db_execute_query_description(db_type: str) -> str:
+    engine_label = database_engine_label(db_type)
+    syntax_label = _database_syntax_label(db_type)
+    return f"""\
+Execute a read-only SELECT query against a {engine_label} database and return structured rows.
 
 Use this to inspect live data during debugging after confirming the table schema with
 {TOOL_DB_GET_TABLE_SCHEMA}. Only a single SELECT statement is accepted.
+
+Prefer targeted queries that narrow the result set with WHERE clauses and stable ORDER BY clauses.
+When you need fewer rows, use {syntax_label} limiting or pagination syntax in the SQL.
+This tool is intended for focused investigation, not bulk export or large result retrieval.
 """
+
+
+def query_truncated_hint(db_type: str) -> str:
+    engine_label = database_engine_label(db_type)
+    syntax_label = _database_syntax_label(db_type)
+    return (
+        f"The result was truncated to keep a single response to at most {QUERY_MAX_LIMIT} rows and "
+        "protect agent context. If you need a smaller or more specific result, refine the SQL with "
+        f"WHERE clauses and a stable ORDER BY clause. The current database engine is {engine_label}; "
+        f"use {syntax_label} limiting or pagination syntax if needed."
+    )
+
+
+def query_complete_hint(db_type: str) -> str:
+    engine_label = database_engine_label(db_type)
+    syntax_label = _database_syntax_label(db_type)
+    return (
+        f"The query result fit within the tool's response limit. If you need a different slice of "
+        f"data, refine the SQL with WHERE clauses, a stable ORDER BY clause, or {syntax_label} "
+        f"limiting syntax for {engine_label}."
+    )
+
+
+def query_error_hint(db_type: str) -> str:
+    engine_label = database_engine_label(db_type)
+    return (
+        "The query failed. Verify table and column names, then check whether the SQL matches "
+        f"{engine_label} syntax and retry once. If the query still fails after one correction, "
+        "stop and tell the user the error message above."
+    )
 
 HINT_DATABASE_NOT_FOUND = (
     "The database was not found or is not accessible. Before retrying: "
@@ -60,12 +113,6 @@ HINT_TABLE_NOT_FOUND = (
     f"(3) call {TOOL_DB_LIST_TABLES} to see the tables that actually exist. "
     "If the table still cannot be found after retrying with a confirmed name, "
     f"{STOP_NOTIFY_AND_ASK_USER_HOW_TO_PROCEED_INSTRUCTION}"
-)
-
-HINT_QUERY_ERROR = (
-    f"The query failed. Call {TOOL_DB_GET_TABLE_SCHEMA} to verify table and column names, "
-    "then retry with a corrected SELECT statement. "
-    "Retry at most once; if still failing, stop and tell the user the error message above."
 )
 
 HINT_DATABASES_FOUND = (

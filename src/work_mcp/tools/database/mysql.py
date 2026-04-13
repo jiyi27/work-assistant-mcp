@@ -16,6 +16,7 @@ from .base import (
     TableNotFoundError,
 )
 from .normalize import normalize_database_value
+from .strings import QUERY_MAX_LIMIT
 
 try:
     import pymysql
@@ -168,6 +169,10 @@ def _normalize_value(value: Any) -> Any:
     return normalize_database_value(value)
 
 
+def _pool_key(database: str | None) -> str:
+    return database or ""
+
+
 class MySqlClient(AbstractDatabaseClient):
     def __init__(self, settings: DatabaseSettings) -> None:
         self._settings = settings
@@ -202,7 +207,7 @@ class MySqlClient(AbstractDatabaseClient):
 
         return self._run_with_cursor(database, operation)
 
-    def execute_query(self, database: str, sql: str, limit: int) -> QueryResult:
+    def execute_query(self, database: str, sql: str) -> QueryResult:
         def operation(cursor: _MySqlCursor) -> QueryResult:
             try:
                 cursor.execute(sql)
@@ -211,11 +216,11 @@ class MySqlClient(AbstractDatabaseClient):
 
             description = cursor.description or []
             columns = [str(item[0]) for item in description]
-            fetched_rows = cursor.fetchmany(limit + 1)
-            truncated = len(fetched_rows) > limit
+            fetched_rows = cursor.fetchmany(QUERY_MAX_LIMIT + 1)
+            truncated = len(fetched_rows) > QUERY_MAX_LIMIT
             materialized_rows = [
                 [_normalize_value(value) for value in row]
-                for row in fetched_rows[:limit]
+                for row in fetched_rows[:QUERY_MAX_LIMIT]
             ]
             return QueryResult(
                 columns=columns,
@@ -262,7 +267,7 @@ class MySqlClient(AbstractDatabaseClient):
         *,
         force_new: bool = False,
     ) -> _MySqlConnection:
-        pool_key = self._pool_key(database)
+        pool_key = _pool_key(database)
         with self._connections_lock:
             if force_new:
                 self._discard_connection(database)
@@ -274,7 +279,7 @@ class MySqlClient(AbstractDatabaseClient):
             return connection
 
     def _discard_connection(self, database: str | None) -> None:
-        pool_key = self._pool_key(database)
+        pool_key = _pool_key(database)
         with self._connections_lock:
             connection = self._connections.pop(pool_key, None)
         if connection is None:
@@ -283,7 +288,7 @@ class MySqlClient(AbstractDatabaseClient):
             pass
 
     def _get_operation_lock(self, database: str | None) -> RLock:
-        pool_key = self._pool_key(database)
+        pool_key = _pool_key(database)
         with self._connections_lock:
             lock = self._operation_locks.get(pool_key)
             if lock is None:
@@ -315,9 +320,6 @@ class MySqlClient(AbstractDatabaseClient):
             return _coerce_mysql_connection(raw_connection)
         except _mysql_error_type() as exc:
             _raise_for_mysql_error(exc, database=database)
-
-    def _pool_key(self, database: str | None) -> str:
-        return database or ""
 
 
 def _format_mysql_error(exc: Exception) -> tuple[int, str]:

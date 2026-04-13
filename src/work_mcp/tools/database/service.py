@@ -17,9 +17,10 @@ from .strings import (
     HINT_DATABASE_NOT_FOUND,
     HINT_DATABASES_FOUND,
     HINT_NO_DATABASES,
-    HINT_QUERY_ERROR,
     HINT_TABLE_NOT_FOUND,
-    QUERY_MAX_LIMIT,
+    query_complete_hint,
+    query_error_hint,
+    query_truncated_hint,
 )
 
 
@@ -99,7 +100,7 @@ class DatabaseService:
             "columns": columns,
         }
 
-    def execute_query(self, database: str, sql: str, limit: int) -> dict[str, Any]:
+    def execute_query(self, database: str, sql: str) -> dict[str, Any]:
         database_name = database.strip()
         sql_text = sql.strip()
 
@@ -107,12 +108,6 @@ class DatabaseService:
             return self._invalid_argument("database")
         if not sql_text:
             return self._invalid_argument("sql")
-        if limit < 1 or limit > QUERY_MAX_LIMIT:
-            return {
-                "success": False,
-                "error_type": "invalid_argument",
-                "hint": f"`limit` must be between 1 and {QUERY_MAX_LIMIT}. Fix the parameter and retry.",
-            }
 
         try:
             validate_read_only_query(sql_text)
@@ -124,7 +119,7 @@ class DatabaseService:
             }
 
         try:
-            result = self._client.execute_query(database_name, sql_text, limit)
+            result = self._client.execute_query(database_name, sql_text)
         except DatabaseNotFoundError:
             return {
                 "success": False,
@@ -136,7 +131,7 @@ class DatabaseService:
                 "success": False,
                 "error_type": "query_error",
                 "message": str(exc),
-                "hint": HINT_QUERY_ERROR,
+                "hint": query_error_hint(self._settings.database.db_type),
             }
         except DatabaseConnectionError as exc:
             return self._internal_error(str(exc))
@@ -148,6 +143,11 @@ class DatabaseService:
             "rows": result.rows,
             "row_count": result.row_count,
             "truncated": result.truncated,
+            "hint": (
+                query_truncated_hint(self._settings.database.db_type)
+                if result.truncated
+                else query_complete_hint(self._settings.database.db_type)
+            ),
         }
 
     def _invalid_argument(self, param_name: str) -> dict[str, Any]:

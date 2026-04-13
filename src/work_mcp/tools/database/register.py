@@ -7,15 +7,14 @@ from mcp.server.fastmcp import FastMCP
 from ...config import Settings
 from .service import DatabaseService
 from .strings import (
-    DB_EXECUTE_QUERY_DESCRIPTION,
     DB_GET_TABLE_SCHEMA_DESCRIPTION,
     DB_LIST_DATABASES_DESCRIPTION,
     DB_LIST_TABLES_DESCRIPTION,
-    QUERY_DEFAULT_LIMIT,
     TOOL_DB_EXECUTE_QUERY,
     TOOL_DB_GET_TABLE_SCHEMA,
     TOOL_DB_LIST_DATABASES,
     TOOL_DB_LIST_TABLES,
+    db_execute_query_description,
 )
 
 
@@ -42,10 +41,12 @@ def register_database_tools(mcp: FastMCP, settings: Settings) -> None:
     ) -> dict[str, Any]:
         return service.get_table_schema(database, table)
 
-    @mcp.tool(name=TOOL_DB_EXECUTE_QUERY, description=DB_EXECUTE_QUERY_DESCRIPTION)
+    @mcp.tool(
+        name=TOOL_DB_EXECUTE_QUERY,
+        description=db_execute_query_description(settings.database.db_type),
+    )
     def db_execute_query(
         database: Annotated[str, f"Database name returned by {TOOL_DB_LIST_DATABASES}."],
         sql: Annotated[str, "A single SELECT statement used to inspect live data."],
-        limit: Annotated[int, "Maximum rows to return. Must be between 1 and 50."] = QUERY_DEFAULT_LIMIT,
     ) -> dict[str, Any]:
-        return service.execute_query(database, sql, limit)
+        return service.execute_query(database, sql)

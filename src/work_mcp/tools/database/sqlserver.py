@@ -17,6 +17,7 @@ from .base import (
     TableNotFoundError,
 )
 from .normalize import normalize_database_value
+from .strings import QUERY_MAX_LIMIT
 
 LIST_DATABASES_SQL = """
 SELECT name
@@ -114,7 +115,7 @@ class SqlServerClient(AbstractDatabaseClient):
 
         return self._run_with_cursor(database, operation)
 
-    def execute_query(self, database: str, sql: str, limit: int) -> QueryResult:
+    def execute_query(self, database: str, sql: str) -> QueryResult:
         def operation(cursor: pyodbc.Cursor) -> QueryResult:
             try:
                 cursor.execute(sql)
@@ -123,11 +124,11 @@ class SqlServerClient(AbstractDatabaseClient):
 
             description = cursor.description or []
             columns = [str(item[0]) for item in description]
-            fetched_rows = cursor.fetchmany(limit + 1)
-            truncated = len(fetched_rows) > limit
+            fetched_rows = cursor.fetchmany(QUERY_MAX_LIMIT + 1)
+            truncated = len(fetched_rows) > QUERY_MAX_LIMIT
             materialized_rows = [
                 [self._normalize_value(value) for value in row]
-                for row in fetched_rows[:limit]
+                for row in fetched_rows[:QUERY_MAX_LIMIT]
             ]
             return QueryResult(
                 columns=columns,
