@@ -21,7 +21,6 @@ def _answers(**overrides: object) -> SetupAnswers:
         port=3306,
         user="readonly_user",
         password="secret",
-        database_name="app_db",
         driver="",
         trust_server_certificate=False,
         connect_timeout_seconds=5,
@@ -51,6 +50,7 @@ def test_build_updated_yaml_updates_active_plugin_and_preserves_inactive_ones() 
     # Active plugin (database) is updated with new values
     assert updated["database"]["type"] == "mysql"
     assert updated["database"]["host"] == "db.example.internal"
+    assert "name" not in updated["database"]
     assert "driver" not in updated["database"]
     assert "trust_server_certificate" not in updated["database"]
     # Inactive plugins are preserved, not removed
@@ -159,7 +159,6 @@ database:
   port: 3306
   user: readonly_user
   password: secret
-  name: app_db
   connect_timeout_seconds: 5
 """.strip()
         + "\n",
@@ -169,17 +168,14 @@ database:
     monkeypatch.setattr("work_mcp.setup.shutil.which", lambda name: "/usr/bin/uv")
     monkeypatch.setattr(
         "work_mcp.setup.check_database_connectivity",
-        lambda config, timeout_seconds: {"database_name": config.default_database_name},
+        lambda config, timeout_seconds: {"database_name": ""},
     )
 
     results = diagnose(tmp_path)
 
     assert has_errors(results) is False
     assert any(result.message == "uv is available" for result in results)
-    assert any(
-        result.message == "database connectivity succeeded for app_db"
-        for result in results
-    )
+    assert any(result.message == "database connectivity succeeded" for result in results)
 
 
 def test_diagnose_reports_missing_sqlserver_driver(
@@ -202,7 +198,6 @@ database:
   port: 1433
   user: readonly_user
   password: secret
-  name: master
   driver: ODBC Driver 18 for SQL Server
   trust_server_certificate: false
 """.strip()
@@ -214,7 +209,7 @@ database:
     monkeypatch.setattr("work_mcp.setup.get_installed_odbc_drivers", lambda: [])
     monkeypatch.setattr(
         "work_mcp.setup.check_database_connectivity",
-        lambda config, timeout_seconds: {"database_name": config.default_database_name},
+        lambda config, timeout_seconds: {"database_name": ""},
     )
 
     results = diagnose(tmp_path)
@@ -241,7 +236,6 @@ database:
   port: 3306
   user: readonly_user
   password: secret
-  name: app_db
   connect_timeout_seconds: 1
 """.strip()
         + "\n",
@@ -252,7 +246,7 @@ database:
 
     def slow_probe(config, timeout_seconds):
         time.sleep(timeout_seconds + 0.2)
-        return {"database_name": config.default_database_name}
+        return {"database_name": ""}
 
     monkeypatch.setattr("work_mcp.setup.check_database_connectivity", slow_probe)
 

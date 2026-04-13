@@ -369,7 +369,6 @@ database:
   port: 1444
   user: readonly_user
   password: secret
-  name: master
   driver: ODBC Driver 18 for SQL Server
   trust_server_certificate: true
   connect_timeout_seconds: 9
@@ -386,7 +385,6 @@ database:
     assert settings.database.port == 1444
     assert settings.database.user == "readonly_user"
     assert settings.database.password == "secret"
-    assert settings.database.default_database_name == "master"
     assert settings.database.trust_server_certificate is True
     assert settings.database.connect_timeout_seconds == 9
 
@@ -405,7 +403,6 @@ database:
   host: mysql.example.internal
   user: readonly_user
   password: secret
-  name: app_db
   connect_timeout_seconds: 9
 """.strip(),
         encoding="utf-8",
@@ -421,7 +418,6 @@ database:
     assert settings.database.port == 3306
     assert settings.database.user == "readonly_user"
     assert settings.database.password == "secret"
-    assert settings.database.default_database_name == "app_db"
     assert settings.database.driver == ""
     assert settings.database.trust_server_certificate is False
     assert settings.database.connect_timeout_seconds == 9

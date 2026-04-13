@@ -56,7 +56,6 @@ class DatabaseSettings:
     port: int
     user: str
     password: str
-    default_database_name: str
     driver: str
     trust_server_certificate: bool
     connect_timeout_seconds: int
@@ -291,7 +290,6 @@ def _read_database_settings(yaml_cfg: dict[str, Any]) -> DatabaseSettings | None
         port=port,
         user=_read_text(yaml_db.get("user")),
         password=_read_text(yaml_db.get("password")),
-        default_database_name=_read_text(yaml_db.get("name")),
         driver=_read_text(yaml_db.get("driver", _default_db_driver(db_type))),
         trust_server_certificate=raw_trust_cert,
         connect_timeout_seconds=connect_timeout_seconds,
@@ -354,8 +352,6 @@ def validate_settings(settings: Settings) -> None:
                 errors.append("database: missing database.user in config.yaml")
             if not settings.database.password:
                 errors.append("database: missing database.password in config.yaml")
-            if not settings.database.default_database_name:
-                errors.append("database: missing database.name in config.yaml")
             if (
                 settings.database.db_type == DB_TYPE_SQLSERVER
                 and not settings.database.driver

@@ -144,7 +144,6 @@ def _yaml_db_to_answers(yaml_db: dict) -> dict[str, object]:
         "port": int(yaml_db.get("port") or default_port_for_db(db_type)),
         "user": normalize_text_value(yaml_db.get("user")),
         "password": normalize_text_value(yaml_db.get("password")),
-        "database_name": normalize_text_value(yaml_db.get("name")),
         "driver": normalize_text_value(yaml_db.get("driver", default_driver_for_db(db_type))),
         "trust_server_certificate": bool(yaml_db.get("trust_server_certificate", True)),
         "connect_timeout_seconds": int(yaml_db.get("connect_timeout_seconds", 5)),
@@ -252,14 +251,6 @@ def collect_database_answers(existing_yaml_db: dict) -> dict[str, object]:
                 secret_field="password",
             )
         ),
-        "database_name": str(
-            prompt_text(
-                "默认连接的数据库名是什么",
-                existing_value=normalize_text_value(existing_yaml_db.get("name")),
-                default_value="master",
-                validator=lambda value: validate_required_text(value, "name"),
-            )
-        ),
         "connect_timeout_seconds": int(
             prompt_text(
                 "数据库连接超时时间（秒）是多少",
@@ -297,7 +288,6 @@ def _default_database_answers() -> dict[str, object]:
         "port": default_port_for_db(DB_TYPE_MYSQL),
         "user": "",
         "password": "",
-        "database_name": "",
         "driver": "",
         "trust_server_certificate": True,
         "connect_timeout_seconds": 5,
@@ -354,7 +344,6 @@ def collect_answers(
         port=int(database_answers["port"]),
         user=str(database_answers["user"]),
         password=str(database_answers["password"]),
-        database_name=str(database_answers["database_name"]),
         driver=str(database_answers["driver"]),
         trust_server_certificate=bool(database_answers["trust_server_certificate"]),
         connect_timeout_seconds=int(database_answers["connect_timeout_seconds"]),

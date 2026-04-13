@@ -32,7 +32,6 @@ _DEFAULT_DATABASE = DatabaseSettings(
     port=1433,
     user="readonly_user",
     password="secret",
-    default_database_name="master",
     driver="ODBC Driver 18 for SQL Server",
     trust_server_certificate=False,
     connect_timeout_seconds=5,
@@ -43,7 +42,6 @@ _DEFAULT_MYSQL_DATABASE = DatabaseSettings(
     port=3306,
     user="readonly_user",
     password="secret",
-    default_database_name="app_db",
     driver="",
     trust_server_certificate=False,
     connect_timeout_seconds=5,
@@ -275,6 +273,7 @@ def test_sqlserver_client_reuses_connection_per_database(monkeypatch) -> None:
     assert client.list_databases() == ["app_db"]
     assert client.list_databases() == ["app_db"]
     assert len(connect_calls) == 1
+    assert "DATABASE=" not in connect_calls[0]
 
 
 def test_check_database_connectivity_uses_db_type_factory(monkeypatch) -> None:
@@ -301,6 +300,7 @@ def test_check_database_connectivity_uses_db_type_factory(monkeypatch) -> None:
         "login_name": "readonly_user",
     }
     assert len(connect_calls) == 1
+    assert "DATABASE=" not in connect_calls[0]
 
 
 def test_get_db_client_returns_mysql_client() -> None:
@@ -353,7 +353,7 @@ def test_mysql_client_reuses_connection_per_database(monkeypatch) -> None:
     assert client.list_databases() == ["app_db"]
     assert client.list_databases() == ["app_db"]
     assert len(connect_calls) == 1
-    assert connect_calls[0]["database"] == "app_db"
+    assert connect_calls[0]["database"] is None
 
 
 def test_check_mysql_database_connectivity_uses_db_type_factory(monkeypatch) -> None:
@@ -383,7 +383,7 @@ def test_check_mysql_database_connectivity_uses_db_type_factory(monkeypatch) -> 
         "login_name": "readonly_user@%",
     }
     assert len(connect_calls) == 1
-    assert connect_calls[0]["database"] == "app_db"
+    assert connect_calls[0]["database"] is None
 
 
 def test_mysql_client_reconnects_after_connection_error(monkeypatch) -> None:

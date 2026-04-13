@@ -240,18 +240,17 @@ class MySqlClient(AbstractDatabaseClient):
         database_name: str | None,
         operation: Callable[[_MySqlCursor], T],
     ) -> T:
-        database = database_name or self._settings.default_database_name
-        operation_lock = self._get_operation_lock(database)
+        operation_lock = self._get_operation_lock(database_name)
         with operation_lock:
             try:
-                with closing(self._get_connection(database).cursor()) as cursor:
+                with closing(self._get_connection(database_name).cursor()) as cursor:
                     return operation(cursor)
             except _mysql_error_type() as exc:
                 if _is_connection_error(exc):
-                    self._discard_connection(database)
+                    self._discard_connection(database_name)
                     try:
                         with closing(
-                            self._get_connection(database, force_new=True).cursor()
+                            self._get_connection(database_name, force_new=True).cursor()
                         ) as cursor:
                             return operation(cursor)
                     except _mysql_error_type() as retry_exc:
@@ -260,37 +259,40 @@ class MySqlClient(AbstractDatabaseClient):
 
     def _get_connection(
         self,
-        database: str,
+        database: str | None,
         *,
         force_new: bool = False,
     ) -> _MySqlConnection:
+        pool_key = self._pool_key(database)
         with self._connections_lock:
             if force_new:
                 self._discard_connection(database)
-            connection = self._connections.get(database)
+            connection = self._connections.get(pool_key)
             if connection is not None:
                 return connection
             connection = self._connect(database)
-            self._connections[database] = connection
+            self._connections[pool_key] = connection
             return connection
 
-    def _discard_connection(self, database: str) -> None:
+    def _discard_connection(self, database: str | None) -> None:
+        pool_key = self._pool_key(database)
         with self._connections_lock:
-            connection = self._connections.pop(database, None)
+            connection = self._connections.pop(pool_key, None)
         if connection is None:
             return
         with closing(connection):
             pass
 
-    def _get_operation_lock(self, database: str) -> RLock:
+    def _get_operation_lock(self, database: str | None) -> RLock:
+        pool_key = self._pool_key(database)
         with self._connections_lock:
-            lock = self._operation_locks.get(database)
+            lock = self._operation_locks.get(pool_key)
             if lock is None:
                 lock = RLock()
-                self._operation_locks[database] = lock
+                self._operation_locks[pool_key] = lock
             return lock
 
-    def _connect(self, database: str) -> _MySqlConnection:
+    def _connect(self, database: str | None) -> _MySqlConnection:
         _ensure_pymysql_available()
         try:
             raw_connection = cast(
@@ -300,19 +302,23 @@ class MySqlClient(AbstractDatabaseClient):
                     port=self._settings.port,
                     user=self._settings.user,
                     password=self._settings.password,
-                    database=database,
+                    database=database or None,
                     connect_timeout=self._settings.connect_timeout_seconds,
                     autocommit=True,
                     charset="utf8mb4",
                 ),
             )
             if raw_connection is None:
+                db_fragment = f" for database '{database}'" if database else ""
                 raise DatabaseConnectionError(
-                    f"MySQL connection failed for database '{database}': pymysql.connect() returned None."
+                    f"MySQL connection failed{db_fragment}: pymysql.connect() returned None."
                 )
             return _coerce_mysql_connection(raw_connection)
         except _mysql_error_type() as exc:
             _raise_for_mysql_error(exc, database=database)
+
+    def _pool_key(self, database: str | None) -> str:
+        return database or ""
 
 
 def _format_mysql_error(exc: Exception) -> tuple[int, str]:
@@ -341,7 +347,7 @@ def probe_mysql_connectivity(
                 port=settings.port,
                 user=settings.user,
                 password=settings.password,
-                database=settings.default_database_name,
+                database=None,
                 connect_timeout=timeout_seconds,
                 autocommit=True,
                 charset="utf8mb4",

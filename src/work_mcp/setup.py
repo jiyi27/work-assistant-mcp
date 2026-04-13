@@ -39,7 +39,6 @@ class SetupAnswers:
     port: int
     user: str
     password: str
-    database_name: str
     driver: str
     trust_server_certificate: bool
     connect_timeout_seconds: int
@@ -138,7 +137,6 @@ def build_updated_yaml(existing_yaml: dict[str, Any], answers: SetupAnswers) -> 
             "port": answers.port,
             "user": answers.user,
             "password": answers.password,
-            "name": answers.database_name,
             "connect_timeout_seconds": answers.connect_timeout_seconds,
         }
         if answers.db_type == DB_TYPE_SQLSERVER:
@@ -251,7 +249,7 @@ def is_database_config_complete(yaml_db: dict) -> bool:
     db_type = normalize_text_value(yaml_db.get("type")).lower()
     if db_type not in {DB_TYPE_MYSQL, DB_TYPE_SQLSERVER}:
         return False
-    required = ["host", "port", "user", "password", "name"]
+    required = ["host", "port", "user", "password"]
     if db_type == DB_TYPE_SQLSERVER:
         required.append("driver")
     return all(normalize_text_value(yaml_db.get(key)) for key in required)
@@ -312,7 +310,7 @@ def diagnose(project_root: Path = PROJECT_ROOT) -> list[DiagnosticResult]:
             else:
                 results.append(DiagnosticResult("ok", f"database.type = {db_type}"))
 
-            required_keys = ["host", "user", "password", "name"]
+            required_keys = ["host", "user", "password"]
             if db_type == DB_TYPE_SQLSERVER:
                 required_keys.append("driver")
             for key in required_keys:
@@ -378,11 +376,10 @@ def diagnose(project_root: Path = PROJECT_ROOT) -> list[DiagnosticResult]:
                         DiagnosticResult("error", f"database connectivity failed: {exc}")
                     )
                 else:
-                    database_name = str(probe.get("database_name", ""))
                     results.append(
                         DiagnosticResult(
                             "ok",
-                            f"database connectivity succeeded for {database_name or 'configured database'}",
+                            "database connectivity succeeded",
                         )
                     )
 
@@ -507,7 +504,7 @@ def _can_run_database_probe(yaml_db: dict[str, Any]) -> bool:
     db_type = normalize_text_value(yaml_db.get("type")).lower()
     if db_type not in {DB_TYPE_MYSQL, DB_TYPE_SQLSERVER}:
         return False
-    required_keys = ["host", "user", "password", "name"]
+    required_keys = ["host", "user", "password"]
     if db_type == DB_TYPE_SQLSERVER:
         required_keys.append("driver")
     return all(normalize_text_value(yaml_db.get(key)) for key in required_keys)
@@ -560,7 +557,6 @@ def _build_database_settings(yaml_db: dict[str, Any]) -> Any:
         port=int(yaml_db.get("port", DEFAULT_DB_PORTS.get(db_type, 1433))),
         user=normalize_text_value(yaml_db.get("user")),
         password=normalize_text_value(yaml_db.get("password")),
-        default_database_name=normalize_text_value(yaml_db.get("name")),
         driver=normalize_text_value(yaml_db.get("driver")),
         trust_server_certificate=trust_server_certificate,
         connect_timeout_seconds=int(

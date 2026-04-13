@@ -21,7 +21,6 @@ _DEFAULT_DATABASE = DatabaseSettings(
     port=1433,
     user="readonly_user",
     password="secret",
-    default_database_name="master",
     driver="ODBC Driver 18 for SQL Server",
     trust_server_certificate=False,
     connect_timeout_seconds=5,

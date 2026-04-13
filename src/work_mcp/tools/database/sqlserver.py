@@ -150,18 +150,17 @@ class SqlServerClient(AbstractDatabaseClient):
         database: str | None,
         operation: Callable[[pyodbc.Cursor], T],
     ) -> T:
-        resolved_database = database or self._settings.default_database_name
-        operation_lock = self._get_operation_lock(resolved_database)
+        operation_lock = self._get_operation_lock(database)
         with operation_lock:
             try:
-                with closing(self._get_connection(resolved_database).cursor()) as cursor:
+                with closing(self._get_connection(database).cursor()) as cursor:
                     return operation(cursor)
             except pyodbc.Error as exc:
                 if self._is_connection_error(exc):
-                    self._discard_connection(resolved_database)
+                    self._discard_connection(database)
                     try:
                         with closing(
-                            self._get_connection(resolved_database, force_new=True).cursor()
+                            self._get_connection(database, force_new=True).cursor()
                         ) as cursor:
                             return operation(cursor)
                     except pyodbc.Error as retry_exc:
@@ -170,37 +169,40 @@ class SqlServerClient(AbstractDatabaseClient):
 
     def _get_connection(
         self,
-        database: str,
+        database: str | None,
         *,
         force_new: bool = False,
     ) -> pyodbc.Connection:
+        pool_key = self._pool_key(database)
         with self._connections_lock:
             if force_new:
                 self._discard_connection(database)
-            connection = self._connections.get(database)
+            connection = self._connections.get(pool_key)
             if connection is not None:
                 return connection
             connection = self._connect(database)
-            self._connections[database] = connection
+            self._connections[pool_key] = connection
             return connection
 
-    def _discard_connection(self, database: str) -> None:
+    def _discard_connection(self, database: str | None) -> None:
+        pool_key = self._pool_key(database)
         with self._connections_lock:
-            connection = self._connections.pop(database, None)
+            connection = self._connections.pop(pool_key, None)
         if connection is None:
             return
         with closing(connection):
             pass
 
-    def _get_operation_lock(self, database: str) -> RLock:
+    def _get_operation_lock(self, database: str | None) -> RLock:
+        pool_key = self._pool_key(database)
         with self._connections_lock:
-            lock = self._operation_locks.get(database)
+            lock = self._operation_locks.get(pool_key)
             if lock is None:
                 lock = RLock()
-                self._operation_locks[database] = lock
+                self._operation_locks[pool_key] = lock
             return lock
 
-    def _connect(self, database: str) -> pyodbc.Connection:
+    def _connect(self, database: str | None) -> pyodbc.Connection:
         try:
             connection = pyodbc.connect(
                 self._connection_string(database),
@@ -208,24 +210,30 @@ class SqlServerClient(AbstractDatabaseClient):
                 autocommit=True,
             )
             if connection is None:
+                db_fragment = f" for database '{database}'" if database else ""
                 raise DatabaseConnectionError(
-                    f"SQL Server connection failed for database '{database}': pyodbc.connect() returned None."
+                    f"SQL Server connection failed{db_fragment}: pyodbc.connect() returned None."
                 )
             return connection
         except pyodbc.Error as exc:
             self._raise_for_pyodbc_error(exc, database=database)
 
-    def _connection_string(self, database: str) -> str:
+    def _connection_string(self, database: str | None) -> str:
         trust_cert = "yes" if self._settings.trust_server_certificate else "no"
-        return (
-            f"DRIVER={{{self._settings.driver}}};"
-            f"SERVER={self._settings.host},{self._settings.port};"
-            f"DATABASE={database};"
-            f"UID={self._settings.user};"
-            f"PWD={self._settings.password};"
-            "Encrypt=yes;"
-            f"TrustServerCertificate={trust_cert};"
-        )
+        parts = [
+            f"DRIVER={{{self._settings.driver}}}",
+            f"SERVER={self._settings.host},{self._settings.port}",
+            f"UID={self._settings.user}",
+            f"PWD={self._settings.password}",
+            "Encrypt=yes",
+            f"TrustServerCertificate={trust_cert}",
+        ]
+        if database:
+            parts.append(f"DATABASE={database}")
+        return ";".join(parts) + ";"
+
+    def _pool_key(self, database: str | None) -> str:
+        return database or ""
 
     def _raise_for_pyodbc_error(
         self,
@@ -288,9 +296,7 @@ def probe_sqlserver_connectivity(
     *,
     timeout_seconds: int,
 ) -> dict[str, str]:
-    connection_string = SqlServerClient(settings)._connection_string(
-        settings.default_database_name
-    )
+    connection_string = SqlServerClient(settings)._connection_string(None)
     try:
         with closing(
             pyodbc.connect(
