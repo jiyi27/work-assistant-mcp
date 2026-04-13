@@ -58,12 +58,12 @@ def db_execute_query_description(db_type: str) -> str:
     return f"""\
 Execute a read-only SELECT query against a {engine_label} database and return structured rows.
 
-Use this to inspect live data during debugging after confirming the table schema with
-{TOOL_DB_GET_TABLE_SCHEMA}. Only a single SELECT statement is accepted.
+Use this to inspect live data. If you are unsure of the column names or data types,
+call {TOOL_DB_GET_TABLE_SCHEMA} first. If you already know the schema, call this directly.
 
-Prefer targeted queries that narrow the result set with WHERE clauses and stable ORDER BY clauses.
-When you need fewer rows, use {syntax_label} limiting or pagination syntax in the SQL.
-This tool is intended for focused investigation, not bulk export or large result retrieval.
+Write targeted queries: filter with WHERE clauses and cap the row count using
+{syntax_label} limiting syntax — returning unnecessary rows pollutes your context
+and wastes tokens. Do not use this tool for bulk data retrieval.
 """
 
 
