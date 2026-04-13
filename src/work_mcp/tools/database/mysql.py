@@ -59,20 +59,31 @@ WHERE c.TABLE_SCHEMA = %s
 ORDER BY c.ORDINAL_POSITION
 """
 
-DATABASE_NOT_FOUND_CODES = {1044, 1049}
-TABLE_NOT_FOUND_CODES = {1146}
-QUERY_ERROR_CODES = {1054, 1064, 1149, 1222, 1241}
+DATABASE_NOT_FOUND_CODES = {
+    1044,  # access denied to database
+    1049,  # unknown database
+}
+TABLE_NOT_FOUND_CODES = {
+    1146,  # table doesn't exist
+}
+QUERY_ERROR_CODES = {
+    1054,  # unknown column
+    1064,  # SQL syntax error
+    1149,  # syntax error in old SQL mode
+    1222,  # incorrect number of rows in subquery
+    1241,  # operand should contain one column
+}
 CONNECTION_ERROR_CODES = {
-    0,
-    1040,
-    1042,
-    1043,
-    1045,
-    2002,
-    2003,
-    2005,
-    2013,
-    2055,
+    0,     # unknown / generic connection failure
+    1040,  # too many connections
+    1042,  # unable to get host address
+    1043,  # bad handshake
+    1045,  # access denied (wrong credentials)
+    2002,  # can't connect via socket
+    2003,  # can't connect to host
+    2005,  # unknown host
+    2013,  # lost connection during query
+    2055,  # lost connection (network write failure)
 }
 
 T = TypeVar("T")
@@ -117,6 +128,47 @@ class _MySqlConnection(Protocol):
     def close(self) -> None: ...
 
 
+def _raise_for_mysql_error(
+        exc: Exception,
+    *,
+    database: str | None = None,
+) -> NoReturn:
+    code, message = _format_mysql_error(exc)
+    lowered = message.lower()
+    if code in DATABASE_NOT_FOUND_CODES:
+        raise DatabaseNotFoundError(message) from exc
+    if code in TABLE_NOT_FOUND_CODES or "doesn't exist" in lowered:
+        raise TableNotFoundError(message) from exc
+    if code in CONNECTION_ERROR_CODES:
+        db_fragment = f" for database '{database}'" if database else ""
+        raise DatabaseConnectionError(
+            f"MySQL connection failed{db_fragment}: {message}"
+        ) from exc
+    if code in QUERY_ERROR_CODES:
+        raise QueryExecutionError(message) from exc
+    raise QueryExecutionError(message) from exc
+
+
+def _is_connection_error(exc: Exception) -> bool:
+    code, _ = _format_mysql_error(exc)
+    return code in CONNECTION_ERROR_CODES
+
+
+def _serialize_schema_row(row: _MySqlRow) -> dict[str, Any]:
+    return {
+        "column": str(row[0]),
+        "type": str(row[1]),
+        "nullable": bool(row[2]),
+        "primary_key": bool(row[3]),
+    }
+
+
+def _normalize_value(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).hex()
+    return value
+
+
 class MySqlClient(AbstractDatabaseClient):
     def __init__(self, settings: DatabaseSettings) -> None:
         self._settings = settings
@@ -147,7 +199,7 @@ class MySqlClient(AbstractDatabaseClient):
                 raise TableNotFoundError(
                     f"Table '{table}' was not found in database '{database}'."
                 )
-            return [self._serialize_schema_row(row) for row in rows]
+            return [_serialize_schema_row(row) for row in rows]
 
         return self._run_with_cursor(database, operation)
 
@@ -156,14 +208,14 @@ class MySqlClient(AbstractDatabaseClient):
             try:
                 cursor.execute(sql)
             except _mysql_error_type() as exc:
-                self._raise_for_mysql_error(exc, database=database)
+                _raise_for_mysql_error(exc, database=database)
 
             description = cursor.description or []
             columns = [str(item[0]) for item in description]
             fetched_rows = cursor.fetchmany(limit + 1)
             truncated = len(fetched_rows) > limit
             materialized_rows = [
-                [self._normalize_value(value) for value in row]
+                [_normalize_value(value) for value in row]
                 for row in fetched_rows[:limit]
             ]
             return QueryResult(
@@ -185,26 +237,26 @@ class MySqlClient(AbstractDatabaseClient):
 
     def _run_with_cursor(
         self,
-        database: str | None,
+        database_name: str | None,
         operation: Callable[[_MySqlCursor], T],
     ) -> T:
-        resolved_database = database or self._settings.default_database
-        operation_lock = self._get_operation_lock(resolved_database)
+        database = database_name or self._settings.default_database_name
+        operation_lock = self._get_operation_lock(database)
         with operation_lock:
             try:
-                with closing(self._get_connection(resolved_database).cursor()) as cursor:
+                with closing(self._get_connection(database).cursor()) as cursor:
                     return operation(cursor)
             except _mysql_error_type() as exc:
-                if self._is_connection_error(exc):
-                    self._discard_connection(resolved_database)
+                if _is_connection_error(exc):
+                    self._discard_connection(database)
                     try:
                         with closing(
-                            self._get_connection(resolved_database, force_new=True).cursor()
+                            self._get_connection(database, force_new=True).cursor()
                         ) as cursor:
                             return operation(cursor)
                     except _mysql_error_type() as retry_exc:
-                        self._raise_for_mysql_error(retry_exc, database=database)
-                self._raise_for_mysql_error(exc, database=database)
+                        _raise_for_mysql_error(retry_exc, database=database_name)
+                _raise_for_mysql_error(exc, database=database_name)
 
     def _get_connection(
         self,
@@ -260,45 +312,8 @@ class MySqlClient(AbstractDatabaseClient):
                 )
             return _coerce_mysql_connection(raw_connection)
         except _mysql_error_type() as exc:
-            self._raise_for_mysql_error(exc, database=database)
+            _raise_for_mysql_error(exc, database=database)
 
-    def _raise_for_mysql_error(
-        self,
-        exc: Exception,
-        *,
-        database: str | None = None,
-    ) -> NoReturn:
-        code, message = _format_mysql_error(exc)
-        lowered = message.lower()
-        if code in DATABASE_NOT_FOUND_CODES:
-            raise DatabaseNotFoundError(message) from exc
-        if code in TABLE_NOT_FOUND_CODES or "doesn't exist" in lowered:
-            raise TableNotFoundError(message) from exc
-        if code in CONNECTION_ERROR_CODES:
-            db_fragment = f" for database '{database}'" if database else ""
-            raise DatabaseConnectionError(
-                f"MySQL connection failed{db_fragment}: {message}"
-            ) from exc
-        if code in QUERY_ERROR_CODES:
-            raise QueryExecutionError(message) from exc
-        raise QueryExecutionError(message) from exc
-
-    def _is_connection_error(self, exc: Exception) -> bool:
-        code, _ = _format_mysql_error(exc)
-        return code in CONNECTION_ERROR_CODES
-
-    def _serialize_schema_row(self, row: _MySqlRow) -> dict[str, Any]:
-        return {
-            "column": str(row[0]),
-            "type": str(row[1]),
-            "nullable": bool(row[2]),
-            "primary_key": bool(row[3]),
-        }
-
-    def _normalize_value(self, value: Any) -> Any:
-        if isinstance(value, (bytes, bytearray)):
-            return bytes(value).hex()
-        return value
 
 def _format_mysql_error(exc: Exception) -> tuple[int, str]:
     code = 0
@@ -317,7 +332,6 @@ def probe_mysql_connectivity(
     *,
     timeout_seconds: int,
 ) -> dict[str, str]:
-    client = MySqlClient(settings)
     _ensure_pymysql_available()
     try:
         raw_connection = cast(
@@ -327,7 +341,7 @@ def probe_mysql_connectivity(
                 port=settings.port,
                 user=settings.user,
                 password=settings.password,
-                database=settings.default_database,
+                database=settings.default_database_name,
                 connect_timeout=timeout_seconds,
                 autocommit=True,
                 charset="utf8mb4",

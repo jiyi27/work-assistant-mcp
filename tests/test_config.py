@@ -386,7 +386,7 @@ database:
     assert settings.database.port == 1444
     assert settings.database.user == "readonly_user"
     assert settings.database.password == "secret"
-    assert settings.database.default_database == "master"
+    assert settings.database.default_database_name == "master"
     assert settings.database.trust_server_certificate is True
     assert settings.database.connect_timeout_seconds == 9
 
@@ -421,7 +421,7 @@ database:
     assert settings.database.port == 3306
     assert settings.database.user == "readonly_user"
     assert settings.database.password == "secret"
-    assert settings.database.default_database == "app_db"
+    assert settings.database.default_database_name == "app_db"
     assert settings.database.driver == ""
     assert settings.database.trust_server_certificate is False
     assert settings.database.connect_timeout_seconds == 9

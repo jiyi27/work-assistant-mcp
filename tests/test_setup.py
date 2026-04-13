@@ -169,7 +169,7 @@ database:
     monkeypatch.setattr("work_mcp.setup.shutil.which", lambda name: "/usr/bin/uv")
     monkeypatch.setattr(
         "work_mcp.setup.check_database_connectivity",
-        lambda config, timeout_seconds: {"database_name": config.default_database},
+        lambda config, timeout_seconds: {"database_name": config.default_database_name},
     )
 
     results = diagnose(tmp_path)
@@ -214,7 +214,7 @@ database:
     monkeypatch.setattr("work_mcp.setup.get_installed_odbc_drivers", lambda: [])
     monkeypatch.setattr(
         "work_mcp.setup.check_database_connectivity",
-        lambda config, timeout_seconds: {"database_name": config.default_database},
+        lambda config, timeout_seconds: {"database_name": config.default_database_name},
     )
 
     results = diagnose(tmp_path)
@@ -252,7 +252,7 @@ database:
 
     def slow_probe(config, timeout_seconds):
         time.sleep(timeout_seconds + 0.2)
-        return {"database_name": config.default_database}
+        return {"database_name": config.default_database_name}
 
     monkeypatch.setattr("work_mcp.setup.check_database_connectivity", slow_probe)
 

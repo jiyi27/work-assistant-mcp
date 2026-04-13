@@ -150,7 +150,7 @@ class SqlServerClient(AbstractDatabaseClient):
         database: str | None,
         operation: Callable[[pyodbc.Cursor], T],
     ) -> T:
-        resolved_database = database or self._settings.default_database
+        resolved_database = database or self._settings.default_database_name
         operation_lock = self._get_operation_lock(resolved_database)
         with operation_lock:
             try:
@@ -289,7 +289,7 @@ def probe_sqlserver_connectivity(
     timeout_seconds: int,
 ) -> dict[str, str]:
     connection_string = SqlServerClient(settings)._connection_string(
-        settings.default_database
+        settings.default_database_name
     )
     try:
         with closing(

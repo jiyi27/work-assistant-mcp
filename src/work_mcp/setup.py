@@ -560,7 +560,7 @@ def _build_database_settings(yaml_db: dict[str, Any]) -> Any:
         port=int(yaml_db.get("port", DEFAULT_DB_PORTS.get(db_type, 1433))),
         user=normalize_text_value(yaml_db.get("user")),
         password=normalize_text_value(yaml_db.get("password")),
-        default_database=normalize_text_value(yaml_db.get("name")),
+        default_database_name=normalize_text_value(yaml_db.get("name")),
         driver=normalize_text_value(yaml_db.get("driver")),
         trust_server_certificate=trust_server_certificate,
         connect_timeout_seconds=int(
