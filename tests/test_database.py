@@ -270,7 +270,7 @@ def test_db_execute_query_description_mentions_sqlserver_syntax() -> None:
     execute_query_tool = next(tool for tool in tools if tool.name == "db_execute_query")
 
     assert "SQL Server database" in execute_query_tool.description
-    assert "SQL Server-compatible limiting or pagination syntax" in execute_query_tool.description
+    assert "SQL Server-compatible limiting syntax" in execute_query_tool.description
 
 
 def test_db_execute_query_description_mentions_mysql_syntax() -> None:
@@ -280,7 +280,7 @@ def test_db_execute_query_description_mentions_mysql_syntax() -> None:
     execute_query_tool = next(tool for tool in tools if tool.name == "db_execute_query")
 
     assert "MySQL database" in execute_query_tool.description
-    assert "MySQL-compatible limiting or pagination syntax" in execute_query_tool.description
+    assert "MySQL-compatible limiting syntax" in execute_query_tool.description
 
 
 def test_normalize_database_value_returns_json_safe_values() -> None:
