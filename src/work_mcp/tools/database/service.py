@@ -19,6 +19,7 @@ from .strings import (
     HINT_NO_DATABASES,
     HINT_TABLE_NOT_FOUND,
     query_complete_hint,
+    query_empty_hint,
     query_error_hint,
     query_truncated_hint,
 )
@@ -163,6 +164,8 @@ class DatabaseService:
             "hint": (
                 query_truncated_hint(self._settings.database.db_type)
                 if result.truncated
+                else query_empty_hint()
+                if result.row_count == 0
                 else query_complete_hint()
             ),
         }

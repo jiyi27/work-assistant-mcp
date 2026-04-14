@@ -78,6 +78,17 @@ def query_truncated_hint(db_type: str) -> str:
     )
 
 
+def query_empty_hint() -> str:
+    return (
+        "No rows matched. Before concluding the data does not exist: "
+        "(1) check whether the filter conditions are correct — the WHERE clause may be too restrictive; "
+        "(2) check whether the relevant code path actually runs — the record may never have been written "
+        "if the business logic did not reach that point. "
+        "If the cause is unclear after reviewing the code, "
+        "stop and tell the user what you found and what you suspect."
+    )
+
+
 def query_complete_hint() -> str:
     return "All rows were returned. Proceed with the data."
 
