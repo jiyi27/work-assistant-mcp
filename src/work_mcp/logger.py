@@ -17,6 +17,7 @@ _LEVELS = {"debug": 0, "info": 1, "warning": 2, "error": 3}
 _LOGGER_FILE = os.path.abspath(__file__)
 _MAX_LOG_STRING_LENGTH = 1000
 _LOG_TRUNCATION_MARKER = "...<truncated>..."
+_UNSANITIZED_TOPICS = frozenset({"tool.response"})
 
 
 @dataclass
@@ -171,6 +172,12 @@ def _sanitize_for_log(value: Any) -> Any:
     return value
 
 
+def _prepare_data_for_log(topic: str, data: dict[str, Any]) -> dict[str, Any]:
+    if topic in _UNSANITIZED_TOPICS:
+        return data
+    return _sanitize_for_log(data)
+
+
 def _write(
     level: str,
     topic: str,
@@ -192,7 +199,7 @@ def _write(
     if active_exc is not None:
         record["data"] = _enrich_with_exception(data, active_exc)
 
-    record["data"] = _sanitize_for_log(record["data"])
+    record["data"] = _prepare_data_for_log(topic, record["data"])
 
     try:
         with filepath.open("a", encoding="utf-8") as handle:
