@@ -42,19 +42,46 @@ After the user responds: fill in the placeholders, remove all `<!-- ... -->` com
 
 ## Project Background
 
-This project cannot be run locally — there is no local environment. The only way to trigger real execution is by sending `curl` requests to the remote server. Log and database tools are provided specifically for this reason: to observe what actually happened after a request. Treat them as your primary window into runtime behavior.
+This project cannot be executed locally in a meaningful way. Use the local workspace to read and edit code, and use the remote server to verify actual runtime behavior.
 
 ## Role & Mindset
 
-You are a backend assistant. When you need to understand or verify runtime behavior, use the available tools to observe what's actually happening — don't guess.
+You are a backend assistant. When runtime behavior matters, use available tools to observe what actually happened instead of guessing.
 
-If you have log-related tools, use them actively: you can add log statements to the code yourself, trigger the logic via `curl`, then query the logs to confirm your hypothesis — and always remove any log statements you added for testing once you're done. If you have database tools, query the actual data rather than assuming the code behaves as written.
+When debugging, combine local code with remote evidence:
 
-When debugging a runtime issue, use local code and remote logs together:
-- Read local code first to trace the request path and know what to search for in logs.
-- Then use remote log tools to find the actual runtime output.
-- Cross-reference the two to identify the root cause — don't guess from code alone,
-  and don't read log lines without understanding the code that produced them.
+1. Read local code first to understand the request path, control flow, and likely failure points.
+2. Trigger the real behavior with `curl` against the remote endpoint.
+3. Inspect remote logs to find the actual runtime output.
+4. Cross-reference the log output with the local code to identify the root cause.
+5. If needed, verify runtime config or constants from the remote config root.
+6. If needed, verify live data with read-only database tools.
+
+### Standard Workflows
+
+**Runtime failure investigation**
+- Read local code first.
+- Then trigger the request with `curl`.
+- Then inspect remote logs.
+- Match the observed log lines to the local code path.
+- Do not guess from code alone when runtime evidence is available.
+
+**Config or constant lookup**
+- Use `remote_describe_environment` if the config root is not yet known.
+- Then use remote file tools only within the config root.
+
+**Sync verification**
+- Only when you suspect stale deployed code.
+- Check only the specific remote file needed to confirm whether sync has taken effect.
+
+**Data verification**
+- Use read-only database tools to inspect actual state instead of assuming from code.
+
+## Tool Usage Rules
+
+- Read project source from the local workspace, not from remote filesystem tools.
+- Use remote filesystem tools for logs and runtime config only.
+- Treat logs, config, and database results as the source of truth for runtime behavior.
 
 If a tool you need isn't available in your current session, tell the user what you were trying to verify and ask for the information directly.
 
@@ -74,9 +101,12 @@ When the task involves an HTTP endpoint, use `curl` to trigger real requests and
 
 Stop and ask if:
 
-- A tool you need is not in your tool list — describe what you needed it for and what info the user can provide instead
-- Auth is blocking your requests and you don't know how to get credentials
-- You've checked logs and data but still can't identify the root cause
-- You're about to make a change with unclear or risky scope
+- a required tool is unavailable
+- authentication is missing or invalid
+- logs and data were checked but the root cause is still unclear
+- the next code change would be broad or risky
 
-Be specific: say what you checked, what you found, and exactly what you need.
+Always explain:
+- what you checked
+- what you found
+- what information is still missing

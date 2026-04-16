@@ -17,7 +17,7 @@ from work_mcp.config import (
     Settings,
     default_startup_settings,
 )
-from work_mcp.server import _apply_cli_overrides, create_mcp, main
+from work_mcp.server import SERVER_INSTRUCTIONS, _apply_cli_overrides, create_mcp, main
 from work_mcp.tools.jira.strings import (
     JIRA_GET_ISSUE_DETAILS_TOOL_NAME,
     JIRA_LIST_OPEN_ASSIGNED_ISSUES_TOOL_NAME,
@@ -61,6 +61,12 @@ def test_list_tools_includes_dingtalk_send_markdown() -> None:
     tools = asyncio.run(mcp.list_tools())
 
     assert [tool.name for tool in tools] == ["dingtalk_send_markdown"]
+
+
+def test_create_mcp_sets_server_instructions() -> None:
+    mcp = create_mcp(_make_settings(enabled_plugins=()))
+
+    assert mcp.instructions == SERVER_INSTRUCTIONS
 
 
 def test_dingtalk_send_markdown_returns_structured_result() -> None:

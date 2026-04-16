@@ -21,6 +21,39 @@ from .startup_checks import run_startup_checks
 from .tools import PLUGIN_REGISTRY
 
 ALLOWED_TRANSPORTS = frozenset({"stdio", "streamable-http"})
+SERVER_INSTRUCTIONS = """\
+You are connected to a work-assistant MCP server for a PHP application that runs exclusively on a remote server.
+
+ENVIRONMENT FACTS
+- The local workspace is for editing source code only.
+- Real execution happens on the remote server, not on the local machine.
+- Local edits are typically synced to the server within a few seconds.
+- PHP is interpreted on the server, so no build step is normally required after sync.
+- The local machine may not have the runtime config, shared database, global constants, or external service connections that exist on the server.
+- Under normal conditions, local source code and server source code should match.
+
+REMOTE FILE TOOLS: BOUNDARIES
+- Remote filesystem tools are for inspecting runtime information on the server.
+- Use them for:
+  - live request and error logs
+  - runtime config, bootstrap config, and global constants
+- Do not use remote filesystem tools to read normal project source code.
+- Read project code from the local workspace instead.
+
+EXCEPTION
+- If you suspect a sync failure and believe the server is still running older code, you may inspect the specific remote source file only to verify whether the sync took effect.
+
+SERVER ROOTS
+- The server may expose one or more allowed roots such as:
+  - `kind=logs` for log inspection
+  - `kind=config` for runtime config and constants
+- Call `remote_describe_environment` at the start of a session when the available roots are not already known.
+- If the roots were already established earlier in the conversation, do not call it again unnecessarily.
+
+OPERATING RULE
+- Use local code for source inspection.
+- Use remote tools only for runtime evidence and server-side environment data.
+"""
 
 
 # AOP-style cross-cutting concern: intercept every tool call to inject structured logging.
@@ -58,7 +91,7 @@ def create_mcp(settings: Settings) -> FastMCP:
         if settings.server.transport == "streamable-http"
         else {}
     )
-    mcp = FastMCP(**http_kwargs)
+    mcp = FastMCP(instructions=SERVER_INSTRUCTIONS, **http_kwargs)
     original_tool = mcp.tool
 
     # Replaces mcp.tool with a version that wraps each registered function with logging.
