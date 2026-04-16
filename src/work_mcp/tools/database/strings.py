@@ -34,7 +34,23 @@ Return the column definitions for a database table.
 
 Use this when you are unsure of the exact column names or data types before writing a
 query. Confirms available columns, data types, nullability, and primary-key fields.
+Do not guess database or table names: use the exact runtime names returned by
+{TOOL_DB_LIST_DATABASES} / {TOOL_DB_LIST_TABLES}, or names confirmed from code.
 """
+
+RUNTIME_DATABASE_NAME_GUIDANCE = (
+    "check the source code, config, or ORM inheritance chain to confirm the actual "
+    "database name used at runtime — for example, a base DAO/model may define a logical "
+    "database name and the deployed system may add a prefix or suffix, so the final name "
+    "may differ from the module or environment name"
+)
+
+RUNTIME_TABLE_NAME_GUIDANCE = (
+    "check the source code or ORM models to confirm the actual table name used at runtime — "
+    "for example, a DAO/model class may inherit a shared naming rule from a base class and "
+    "derive the table name from the class name, naming helper, or configured prefix/suffix, "
+    "so do not assume the class name is the final SQL table name"
+)
 
 def database_engine_label(db_type: str) -> str:
     if db_type == DB_TYPE_MYSQL:
@@ -102,20 +118,22 @@ def query_error_hint(db_type: str) -> str:
     )
 
 HINT_DATABASE_NOT_FOUND = (
-    "The database was not found or is not accessible. Before retrying: "
-    "(1) check the source code or ORM models to confirm the actual database name used at runtime — "
-    "it may differ from the logical or environment name; "
-    f"(2) call {TOOL_DB_LIST_DATABASES} to see what databases are visible to the configured account. "
+    "The database was not found or is not accessible. Do not retry with another guessed name. "
+    "Before retrying: "
+    f"(1) {RUNTIME_DATABASE_NAME_GUIDANCE}; "
+    f"(2) call {TOOL_DB_LIST_DATABASES} to see what databases are visible to the configured account; "
+    "(3) retry only with a database name confirmed by code/config or returned by that tool. "
     "If the database still cannot be found after retrying with a confirmed name, "
     f"{STOP_NOTIFY_AND_ASK_USER_HOW_TO_PROCEED_INSTRUCTION}"
 )
 
 HINT_TABLE_NOT_FOUND = (
-    "The table '{{table}}' was not found in database '{{database}}'. Before retrying: "
-    "(1) check the source code or ORM models to confirm the actual table name used at runtime — "
-    "the ORM model class name often differs from the underlying SQL table name; "
+    "The table '{{table}}' was not found in database '{{database}}'. "
+    "Do not retry with another guessed table name. Before retrying: "
+    f"(1) {RUNTIME_TABLE_NAME_GUIDANCE}; "
     "(2) verify you are querying the correct database for this data; "
-    f"(3) call {TOOL_DB_LIST_TABLES} to see the tables that actually exist. "
+    f"(3) call {TOOL_DB_LIST_TABLES} to see the tables that actually exist in '{{database}}'; "
+    "(4) retry only with a table name confirmed by code/ORM metadata or returned by that tool. "
     "If the table still cannot be found after retrying with a confirmed name, "
     f"{STOP_NOTIFY_AND_ASK_USER_HOW_TO_PROCEED_INSTRUCTION}"
 )

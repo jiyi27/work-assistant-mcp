@@ -27,7 +27,10 @@ def register_database_tools(mcp: FastMCP, settings: Settings) -> None:
 
     @mcp.tool(name=TOOL_DB_LIST_TABLES, description=DB_LIST_TABLES_DESCRIPTION)
     def db_list_tables(
-        database: Annotated[str, f"Database name returned by {TOOL_DB_LIST_DATABASES}."],
+        database: Annotated[
+            str,
+            f"Exact runtime database name returned by {TOOL_DB_LIST_DATABASES}, or confirmed from code/config. Do not guess logical aliases.",
+        ],
     ) -> dict[str, Any]:
         return service.list_tables(database)
 
@@ -36,8 +39,14 @@ def register_database_tools(mcp: FastMCP, settings: Settings) -> None:
         description=DB_GET_TABLE_SCHEMA_DESCRIPTION,
     )
     def db_get_table_schema(
-        database: Annotated[str, f"Database name returned by {TOOL_DB_LIST_DATABASES}."],
-        table: Annotated[str, f"Table name returned by {TOOL_DB_LIST_TABLES}."],
+        database: Annotated[
+            str,
+            f"Exact runtime database name returned by {TOOL_DB_LIST_DATABASES}, or confirmed from code/config. Do not guess logical aliases.",
+        ],
+        table: Annotated[
+            str,
+            f"Exact runtime table name returned by {TOOL_DB_LIST_TABLES}, or confirmed from ORM metadata such as db_table / __tablename__. Do not guess from model class names.",
+        ],
     ) -> dict[str, Any]:
         return service.get_table_schema(database, table)
 
@@ -46,7 +55,10 @@ def register_database_tools(mcp: FastMCP, settings: Settings) -> None:
         description=db_execute_query_description(settings.database.db_type),
     )
     def db_execute_query(
-        database: Annotated[str, f"Database name returned by {TOOL_DB_LIST_DATABASES}."],
+        database: Annotated[
+            str,
+            f"Exact runtime database name returned by {TOOL_DB_LIST_DATABASES}, or confirmed from code/config. Do not guess logical aliases.",
+        ],
         sql: Annotated[str, "A single SELECT statement used to inspect live data."],
     ) -> dict[str, Any]:
         return service.execute_query(database, sql)

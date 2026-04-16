@@ -189,6 +189,32 @@ def test_database_service_returns_structured_query_error() -> None:
     }
 
 
+def test_database_service_returns_database_not_found_hint_with_runtime_guidance() -> None:
+    service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
+
+    structured = service.get_table_schema("missing_db", "users")
+
+    assert structured["success"] is False
+    assert structured["error_type"] == "database_not_found"
+    assert "Do not retry with another guessed name." in structured["hint"]
+    assert "ORM inheritance chain" in structured["hint"]
+    assert "prefix or suffix" in structured["hint"]
+    assert "db_list_databases" in structured["hint"]
+
+
+def test_database_service_returns_table_not_found_hint_with_orm_metadata_guidance() -> None:
+    service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
+
+    structured = service.get_table_schema("app_db", "missing_table")
+
+    assert structured["success"] is False
+    assert structured["error_type"] == "table_not_found"
+    assert "Do not retry with another guessed table name." in structured["hint"]
+    assert "derive the table name from the class name" in structured["hint"]
+    assert "configured prefix/suffix" in structured["hint"]
+    assert "db_list_tables" in structured["hint"]
+
+
 def test_database_service_returns_internal_error_for_connection_failure() -> None:
     service = DatabaseService(_make_settings(), client=FakeDatabaseClient())
 
