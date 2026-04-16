@@ -3,6 +3,7 @@ from __future__ import annotations
 from ...hints import STOP_AND_NOTIFY_USER_INSTRUCTION
 from .constants import (
     MAX_FILE_SIZE_MB,
+    MAX_REVERSE_MATCHES,
     MAX_SEARCH_MATCHES,
     MAX_TREE_ENTRIES,
 )
@@ -121,10 +122,10 @@ HINT_LIST_TREE_COMPLETE = (
 
 def build_list_tree_truncated_hint(offset: int, next_offset: int) -> str:
     return (
-        f"The directory listing reached the server limit ({MAX_TREE_ENTRIES} entries). "
-        f"If you need more entries, call {TOOL_LIST_TREE} again with offset={next_offset}. "
-        f"This page started at offset={offset}. If you already know a narrower target, "
-        f"use {TOOL_SEARCH_FILES} with a narrower root or path_glob."
+        f"The directory listing is capped at {MAX_TREE_ENTRIES} entries per page to keep "
+        f"responses manageable. Call {TOOL_LIST_TREE} again with offset={next_offset} for "
+        f"the next page (this page started at offset={offset}). If you already know a "
+        f"narrower target, use {TOOL_SEARCH_FILES} with a path_glob instead."
     )
 
 
@@ -153,22 +154,51 @@ HINT_LIST_TREE_INVALID_OFFSET = (
 # ---------------------------------------------------------------------------
 # search_files hints
 # ---------------------------------------------------------------------------
+SEARCH_SCOPE_GUIDANCE = (
+    "Verify the query text, file pattern, and chosen root before retrying."
+)
+
+RUNTIME_CODE_CONFIRMATION_GUIDANCE = (
+    "If you are debugging behavior from code, check the relevant code logic to confirm "
+    "this is the exact runtime string, file name, config key, or log text you "
+    "should be searching for."
+)
+
+SYNC_OR_TRIGGER_GUIDANCE = (
+    "If you are searching logs or debugging runtime behavior, also consider "
+    "whether the code has not synced to the server yet, or the request / "
+    "interface did not trigger successfully, so the expected file write or "
+    "log line never happened. Ignore this if you are searching for other "
+    "kinds of content such as config, filenames, or static code."
+)
+
+LOG_REVERSE_SEARCH_GUIDANCE = (
+    "These matches come from a broad cross-file search and are not intended to "
+    "identify the newest log entry. If the target is a log file and you already "
+    f"know its path, use {TOOL_SEARCH_FILE_REVERSE} to find the most recent "
+    "matching log lines first."
+)
+
 HINT_SEARCH_COMPLETE = (
     "Matches were found. Pick the most relevant file, then use "
     f"{TOOL_READ_FILE} to read a small range around the returned line."
 )
 
 HINT_SEARCH_TRUNCATED = (
-    f"The search result reached the server limit ({MAX_SEARCH_MATCHES} matches). "
-    "Narrow the search with a more specific root, path_glob, or query before "
-    "retrying."
+    f"The search reached the limit of {MAX_SEARCH_MATCHES} matched files — results are "
+    "capped to avoid exhausting the context window. There may be more matching files not "
+    "shown. Narrow the search with a more specific root, path_glob, or query before "
+    f"retrying. {LOG_REVERSE_SEARCH_GUIDANCE}"
 )
 
 HINT_SEARCH_NO_MATCHES = (
-    "No matches were found. Check the query text, file pattern, and chosen "
-    "root. If the target is a log file and you already know its path, use "
-    f"{TOOL_SEARCH_FILE_REVERSE} instead of broad cross-file search. For filename-only "
-    "search, leave query empty and set path_glob."
+    "No matches were found. "
+    f"{SEARCH_SCOPE_GUIDANCE} "
+    f"{RUNTIME_CODE_CONFIRMATION_GUIDANCE} "
+    f"{SYNC_OR_TRIGGER_GUIDANCE} "
+    f"If the target is a log file and you already know its path, use {TOOL_SEARCH_FILE_REVERSE} "
+    "instead of broad cross-file search. For filename-only search, leave query "
+    "empty and set path_glob."
 )
 
 HINT_SEARCH_INVALID_REGEX = (
@@ -189,8 +219,9 @@ HINT_READ_FILE_COMPLETE = (
 )
 
 HINT_READ_FILE_TRUNCATED = (
-    "More lines exist outside the returned range. If more context is needed, "
-    f"call {TOOL_READ_FILE} again with the next range."
+    "The file has more lines beyond the returned range — see total_lines in the response "
+    "for the full size. Each call is capped to keep responses context-efficient. "
+    f"Call {TOOL_READ_FILE} again with a different start_line or tail to read another section."
 )
 
 HINT_READ_FILE_EMPTY = "The file exists but contains no text lines."
@@ -215,18 +246,22 @@ HINT_REVERSE_SEARCH_COMPLETE = (
 )
 
 HINT_REVERSE_SEARCH_TRUNCATED = (
-    "The newest matches reached the server limit. If you need fewer but richer "
-    "results, retry with a more specific query or smaller match count."
+    f"Returned the {MAX_REVERSE_MATCHES} most recent matches — results are capped to avoid "
+    "flooding the context with log lines. There may be more older matches further back in "
+    "the file. To see fewer, more targeted results, retry with a more specific query. To "
+    f"read surrounding context for a specific hit, call {TOOL_READ_FILE} with the matched "
+    "path and line range."
 )
 
 HINT_REVERSE_SEARCH_NO_MATCHES = (
-    "No matches were found in this file. Verify the query text. If the file "
-    f"path may be wrong, use {TOOL_LIST_TREE} or {TOOL_SEARCH_FILES} first."
+    "No matches were found in this file. Verify the query text against the "
+    "exact runtime string you expect from the relevant code logic. Verify this is the "
+    "correct remote log or runtime file; if the path may be wrong, use "
+    f"{TOOL_LIST_TREE} or {TOOL_SEARCH_FILES} first. {SYNC_OR_TRIGGER_GUIDANCE}"
 )
 
 HINT_REVERSE_SEARCH_INVALID_ARGUMENT = (
-    "The search arguments are invalid. Provide a non-empty query and valid "
-    "positive limits for matches and context lines."
+    "The search arguments are invalid. Provide a non-empty query."
 )
 
 HINT_REVERSE_SEARCH_INVALID_REGEX = (
