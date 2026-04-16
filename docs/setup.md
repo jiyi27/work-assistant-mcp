@@ -1,33 +1,54 @@
-# 配置与部署
+这份文档按步骤说明如何把 `work-mcp` 配起来并启动
 
-这份文档只保留运行方式和最小配置建议。字段级说明、完整示例和工具清单以 [README.md](../README.md) 为准。
+如果你只想查某个字段的详细含义, 再看 [README.md](../README.md)
 
-## 配置原则
+## 1. 准备环境
 
-所有运行时配置都放在 `config.yaml`。
-
-启动时只会读取并校验 `plugins.enabled` 里列出的插件配置。未启用插件的配置段即使保留在 `config.yaml` 中，也不会阻塞启动。
-
-如果需要在启动前检查配置和连通性，执行：
+先安装 `uv`, 然后在仓库根目录安装依赖
 
 ```bash
-make check
+uv sync
 ```
 
-它只检查当前启用的插件。
+如果你要启用 SQL Server 数据库插件, 还需要先在运行机器上安装 `ODBC Driver 18 for SQL Server`
 
-## 推荐运行方式
+## 2. 创建配置文件
 
-推荐按部署位置区分两种模式。
+如果还没有配置文件, 先复制一份模板
 
-- 本地模式：通常启用 `jira`，通过 `stdio` 由 MCP 客户端直接拉起本地进程。
-- 远程模式：通常启用 `database`、`remote_fs`，通过 HTTP 暴露 `/mcp` 端点。
+```bash
+cp config.example.yaml config.yaml
+```
 
-这只是推荐，不是强约束。实际启用哪些插件，以 `config.yaml` 中的 `plugins.enabled` 为准。
+后面的配置都写在 `config.yaml` 里
 
-## 本地模式
+## 3. 选择要启用的插件
 
-最小示例：
+先在 `plugins.enabled` 里写上这次启动要使用的工具组, 然后只配置这些工具组对应的内容就行, 没启用的插件可以先不管
+
+示例
+
+```yaml
+plugins:
+  enabled:
+    - jira
+    - remote_fs
+    - database
+    - dingtalk
+```
+
+上面这份配置表示: 启动时只启用 `jira` 和 `remote_fs`
+
+## 4. 按需配置插件
+
+下面这些小节都是可选的
+
+- 如果不启用某个插件, 可以不配这一节
+- 如果启用了某个插件, 就要把对应配置补完整
+
+### 4.1. Jira
+
+适合本地开发机使用, 也适合只想处理 Jira 工单的场景
 
 ```yaml
 plugins:
@@ -41,80 +62,161 @@ jira:
   latest_assigned_statuses:
     - 待处理
     - 已接收
+    - 处理中
   start_target_status: 已接收
   resolve_target_status: 已解决
+  attachments:
+    max_images: 5
+    max_bytes_per_image: 1048576
 ```
 
-客户端通常直接拉起：
+- `base_url` 是 Jira 地址
+- `api_token` 是 Jira token
+- `project_key` 是允许操作的项目 key
+- `latest_assigned_statuses` 是 `jira_list_open_assigned_issues` 会列出的状态
+- `start_target_status` 和 `resolve_target_status` 是开始处理, 完成处理时要切换到的目标状态
 
-```json
-{
-  "mcpServers": {
-    "work-mcp": {
-      "command": "uv",
-      "args": ["run", "work-mcp"],
-      "cwd": "/absolute/path/to/work-mcp"
-    }
-  }
-}
-```
-
-也可以直接运行：
+如果你不确定状态名, 可以先运行
 
 ```bash
-uv run work-mcp
+uv run python scripts/inspect_jira_issue_workflow.py YOUR-123
 ```
 
-## 远程模式
+### 4.2. Database
 
-最小示例：
+用于只读查询线上数据库, 建议使用只读账号
+
+MySQL 示例
 
 ```yaml
 plugins:
   enabled:
     - database
-    - remote_fs
 
 database:
   type: mysql
-  host: your-db-host.example.com
+  host: your-mysql-host.example.com
+  port: 3306
   user: readonly_user
   password: your_password_here
-
-log_search:
-  log_base_dir: /absolute/path/to/logs
+  connect_timeout_seconds: 5
 ```
 
-HTTP 方式启动：
+SQL Server 示例
+
+```yaml
+plugins:
+  enabled:
+    - database
+
+database:
+  type: sqlserver
+  host: your-sqlserver-host.example.com
+  port: 1433
+  user: readonly_user
+  password: your_password_here
+  driver: ODBC Driver 18 for SQL Server
+  trust_server_certificate: true
+  connect_timeout_seconds: 5
+```
+
+- `type` 填 `mysql` 或 `sqlserver`
+- `user` 应该是只读账号
+- SQL Server 需要 `driver`, 并且要和机器上实际安装的驱动名称一致
+- MySQL 不需要 `driver`
+
+### 4.3. Remote FS
+
+用于查看远程机器上的只读目录, 比如日志, 运行时配置, 部署目录
+
+```yaml
+plugins:
+  enabled:
+    - remote_fs
+
+remote_fs:
+  roots:
+    - name: app
+      path: /srv/myapp
+      kind: code
+      description: Deployed application source
+
+    - name: logs
+      path: /var/log/myapp
+      kind: logs
+      description: Application log files
+
+    - name: config
+      path: /etc/myapp
+      kind: config
+      description: Production configuration
+```
+
+- `roots` 里每一项都是一个允许访问的根目录
+- `name` 是给 agent 看的短名字
+- `path` 必须是服务器上真实存在的目录
+- `kind` 和 `description` 主要是帮助 agent 理解这个目录是干什么的
+
+### 4.4. DingTalk
+
+用于发送钉钉通知
+
+```yaml
+plugins:
+  enabled:
+    - dingtalk
+
+dingtalk:
+  webhook_url: https://oapi.dingtalk.com/robot/send?access_token=your_token_here
+  secret: SECxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+- `webhook_url` 必填
+- `secret` 只在机器人开启签名校验时需要, 不启用的话可以不填
+
+## 5. 补充通用配置
+
+日志配置是可选的, 不写也可以启动
+
+```yaml
+logging:
+  dir: logs
+  level: info
+```
+
+- `dir` 是日志目录
+- `level` 可选 `debug`, `info`, `warning`, `error`
+
+## 6. 检查配置
+
+启动前先检查一次
+
+```bash
+make check
+```
+
+`make check` 的作用
+
+- 检查 `config.yaml` 是否完整
+- 检查当前启用插件的必要连通性
+- 只检查 `plugins.enabled` 里已经启用的插件
+
+## 7. 启动服务
+
+最常用的是
 
 ```bash
 make run
 ```
 
-默认监听 `0.0.0.0:8182`，MCP 端点为：
+`make run` 会以 HTTP 模式启动 MCP 服务, 默认监听
 
 ```text
-http://<server-host>:8182/mcp
+http://0.0.0.0:8182/mcp
 ```
 
-如需覆盖地址或端口：
+如果要改地址或端口
 
 ```bash
 make run HOST=127.0.0.1 PORT=9000
 ```
-
-## 手动初始化
-
-如果还没有配置文件，可以直接复制模板：
-
-```bash
-cp config.example.yaml config.yaml
-```
-
-然后按实际需要删掉未启用插件，或只保留你准备启用的插件配置。
-
-## 说明
-
-- 当前不再推荐使用配置引导脚本作为主流程。
-- 如果你只是想知道某个字段怎么填，看 [README.md](../README.md)。
-- 如果你需要 SQL Server，先在运行机器上安装 ODBC Driver 18 for SQL Server。

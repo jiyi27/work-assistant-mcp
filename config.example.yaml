@@ -1,35 +1,14 @@
-# =============================================================================
-# config.example.yaml — work-mcp configuration reference
-#
-# Copy this file to config.yaml and fill in your values.
-# config.yaml is gitignored; never commit it.
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# Logging
-# -----------------------------------------------------------------------------
-logging:
-  # Log directory. Relative paths are resolved from the process working directory
-  # (`logs` means `./logs`). Absolute paths are also supported, e.g. /var/log/work-mcp.
-  # Default: logs
-  dir: logs
-
-  # Log level. Options: debug | info | warning | error
-  # Default: info
-  level: info
-
 # -----------------------------------------------------------------------------
 # Plugin toggles
 # Only plugins listed here will have their tools registered.
 # Comment out a line to disable all tools from that plugin.
-# Options: database | dingtalk | jira | log_search | remote_fs
+# Options: database | dingtalk | jira | remote_fs
 # -----------------------------------------------------------------------------
 plugins:
   enabled:
+    - jira
     - database
     - dingtalk
-    - jira
-    - log_search
     - remote_fs
 
 
