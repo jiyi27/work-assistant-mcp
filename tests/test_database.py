@@ -164,6 +164,46 @@ def test_validate_read_only_query_rejects_select_into() -> None:
         raise AssertionError("expected ReadOnlyViolation")
 
 
+def test_validate_read_only_query_rejects_for_update() -> None:
+    try:
+        validate_read_only_query("SELECT * FROM users FOR UPDATE")
+    except ReadOnlyViolation as exc:
+        assert "FOR UPDATE" in str(exc)
+        assert "locking clause" in str(exc)
+    else:
+        raise AssertionError("expected ReadOnlyViolation")
+
+
+def test_validate_read_only_query_rejects_lock_in_share_mode() -> None:
+    try:
+        validate_read_only_query("SELECT * FROM users LOCK IN SHARE MODE")
+    except ReadOnlyViolation as exc:
+        assert "LOCK IN SHARE MODE" in str(exc)
+        assert "shared locks" in str(exc)
+    else:
+        raise AssertionError("expected ReadOnlyViolation")
+
+
+def test_validate_read_only_query_rejects_sqlserver_lock_hint() -> None:
+    try:
+        validate_read_only_query("SELECT * FROM users WITH (UPDLOCK, ROWLOCK)")
+    except ReadOnlyViolation as exc:
+        assert "lock hints" in str(exc)
+        assert "Remove the lock hint" in str(exc)
+    else:
+        raise AssertionError("expected ReadOnlyViolation")
+
+
+def test_validate_read_only_query_rejects_waitfor() -> None:
+    try:
+        validate_read_only_query("SELECT 1 WAITFOR DELAY '00:00:05'")
+    except ReadOnlyViolation as exc:
+        assert "WAITFOR" in str(exc)
+        assert "must not block execution" in str(exc)
+    else:
+        raise AssertionError("expected ReadOnlyViolation")
+
+
 def test_database_service_returns_empty_database_hint() -> None:
     client = FakeDatabaseClient()
     client.listed_databases = []

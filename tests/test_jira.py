@@ -78,7 +78,7 @@ def test_jira_list_open_assigned_issues_returns_minimal_issue_list() -> None:
         _, structured = asyncio.run(mcp.call_tool(JIRA_LIST_OPEN_ASSIGNED_ISSUES_TOOL_NAME, {}))
 
     assert structured == {
-        "found": True,
+        "success": True,
         "issues": [{"key": "IOS-123", "summary": "Crash on launch"}],
         "hint": (
             "These are the user's currently open Jira issues. Stop here. In your reply, "
@@ -200,7 +200,7 @@ def test_jira_list_open_assigned_issues_uses_configured_status_list_in_jql() -> 
         _, structured = asyncio.run(mcp.call_tool(JIRA_LIST_OPEN_ASSIGNED_ISSUES_TOOL_NAME, {}))
 
     assert structured == {
-        "found": False,
+        "success": True,
         "issues": [],
         "hint": (
             "No open Jira issues were found for the current user in the configured project and status scope. "

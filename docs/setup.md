@@ -21,7 +21,7 @@ make check
 推荐按部署位置区分两种模式。
 
 - 本地模式：通常启用 `jira`，通过 `stdio` 由 MCP 客户端直接拉起本地进程。
-- 远程模式：通常启用 `database`、`log_search`、`remote_fs`，通过 HTTP 暴露 `/mcp` 端点。
+- 远程模式：通常启用 `database`、`remote_fs`，通过 HTTP 暴露 `/mcp` 端点。
 
 这只是推荐，不是强约束。实际启用哪些插件，以 `config.yaml` 中的 `plugins.enabled` 为准。
 
@@ -73,7 +73,7 @@ uv run work-mcp
 plugins:
   enabled:
     - database
-    - log_search
+    - remote_fs
 
 database:
   type: mysql

@@ -62,10 +62,10 @@ class JiraService:
             return self._internal_error(_api_error_message("fetching the open assigned issues", exc))
 
         if not issues:
-            return {"found": False, "issues": [], "hint": JIRA_LIST_OPEN_ASSIGNED_ISSUES_EMPTY_HINT}
+            return {"success": True, "issues": [], "hint": JIRA_LIST_OPEN_ASSIGNED_ISSUES_EMPTY_HINT}
 
         return {
-            "found": True,
+            "success": True,
             "issues": [self._serialize_issue_list_item(issue) for issue in issues],
             "hint": JIRA_LIST_OPEN_ASSIGNED_ISSUES_SUCCESS_HINT,
         }
