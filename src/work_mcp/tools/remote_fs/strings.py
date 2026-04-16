@@ -13,7 +13,7 @@ from .constants import (
 # ---------------------------------------------------------------------------
 TOOL_DESCRIBE_ENVIRONMENT = "remote_describe_environment"
 TOOL_LIST_TREE = "remote_list_tree"
-TOOL_SEARCH_FILES = "remote_search_files"
+TOOL_GREP = "remote_grep"
 TOOL_READ_FILE = "remote_read_file"
 TOOL_SEARCH_FILE_REVERSE = "remote_search_file_reverse"
 
@@ -30,31 +30,37 @@ other useful server-side resources might live.
 Skip this if the relevant roots are already known from earlier in the conversation.
 """
 
-LIST_TREE_DESCRIPTION = """\
+LIST_TREE_DESCRIPTION = f"""\
 List the direct children of a known directory on the remote server filesystem, not the local workspace.
 
-Use this after remote_describe_environment to explore an unfamiliar remote directory one level at a time.
+Use this after {TOOL_DESCRIBE_ENVIRONMENT} to explore an unfamiliar remote directory one level at a time.
 """
 
-SEARCH_FILES_DESCRIPTION = """\
-Search file contents or file names on the remote server filesystem, not the local workspace.
+GREP_DESCRIPTION = """\
+Search the remote server filesystem by file content or by file name.
 
-Use this for remote config, deployed code, nginx, entrypoints, bootstrap files, or server-side logs.
+Content search: provide query to grep file contents. Returns one result per matched
+file — the first matching line, total match count in that file, and path. Results are
+capped at 20 files; no offset pagination is available, so pair query with path_glob
+to stay under the cap.
 
-For filename-only search, leave query empty and use path_glob.
+Filename search: omit query and set path_glob to find files by name pattern
+(e.g. **/*.log). Returns matching file paths with no line numbers.
+
+Use this for remote config, deployed code, nginx, entrypoints, or server-side logs.
 """
 
-READ_FILE_DESCRIPTION = """\
+READ_FILE_DESCRIPTION = f"""\
 Read a selected text range from a known file on the remote server filesystem, not the local workspace.
 
-Use this only after identifying the remote path through remote_describe_environment, remote_list_tree, or remote_search_files.
+Use this only after identifying the remote path through {TOOL_DESCRIBE_ENVIRONMENT}, {TOOL_LIST_TREE}, or {TOOL_GREP}.
 """
 
-SEARCH_FILE_REVERSE_DESCRIPTION = """\
+SEARCH_FILE_REVERSE_DESCRIPTION = f"""\
 Search a single known file on the remote server from the end, returning the newest matches first.
 
 Use this for log inspection when the exact remote file path is already known.
-For cross-file content search or to locate the file path first, use remote_search_files instead.
+For cross-file content search or to locate the file path first, use {TOOL_GREP} instead.
 """
 
 # ---------------------------------------------------------------------------
@@ -67,7 +73,7 @@ HINT_PATH_NOT_ALLOWED = (
 
 HINT_PATH_NOT_FOUND = (
     "The path does not exist. Do not guess a replacement path. Use "
-    f"{TOOL_DESCRIBE_ENVIRONMENT}, {TOOL_LIST_TREE}, or {TOOL_SEARCH_FILES} "
+    f"{TOOL_DESCRIBE_ENVIRONMENT}, {TOOL_LIST_TREE}, or {TOOL_GREP} "
     "to locate the correct path."
 )
 
@@ -99,7 +105,7 @@ HINT_ROOTS_FOUND = (
     "The remote environment description may include useful roots such as code, logs, "
     "config, or runtime data, and it may also omit information you still need. If the "
     "returned roots are enough, continue with "
-    f"{TOOL_LIST_TREE} or {TOOL_SEARCH_FILES}. If something is still unclear, explore "
+    f"{TOOL_LIST_TREE} or {TOOL_GREP}. If something is still unclear, explore "
     "within those returned roots first. You can only access the roots returned here; "
     "files outside them are not accessible. If the needed path or resource appears to "
     "be outside those roots, stop and ask the user to help resolve that gap."
@@ -116,7 +122,7 @@ HINT_NO_ROOTS = (
 # ---------------------------------------------------------------------------
 HINT_LIST_TREE_COMPLETE = (
     "The directory listing is complete. Choose a relevant subdirectory and call "
-    f"{TOOL_LIST_TREE} again, or use {TOOL_READ_FILE} or {TOOL_SEARCH_FILES} if "
+    f"{TOOL_LIST_TREE} again, or use {TOOL_READ_FILE} or {TOOL_GREP} if "
     "you already know the target."
 )
 
@@ -126,7 +132,7 @@ def build_list_tree_truncated_hint(offset: int, next_offset: int) -> str:
         f"The directory listing is capped at {MAX_TREE_ENTRIES} entries per page to keep "
         f"responses manageable. Call {TOOL_LIST_TREE} again with offset={next_offset} for "
         f"the next page (this page started at offset={offset}). If you already know a "
-        f"narrower target, use {TOOL_SEARCH_FILES} with a path_glob instead."
+        f"narrower target, use {TOOL_GREP} with a path_glob instead."
     )
 
 
@@ -181,15 +187,17 @@ LOG_REVERSE_SEARCH_GUIDANCE = (
 )
 
 HINT_SEARCH_COMPLETE = (
-    "Matches were found. Pick the most relevant file, then use "
-    f"{TOOL_READ_FILE} to read a small range around the returned line."
+    "Matches were found. For content search results, use "
+    f"{TOOL_READ_FILE} to read a range around the returned line number. "
+    f"For filename-only results (line is null), use {TOOL_READ_FILE} or "
+    f"{TOOL_SEARCH_FILE_REVERSE} to inspect the file."
 )
 
 HINT_SEARCH_TRUNCATED = (
     f"The search reached the limit of {MAX_SEARCH_MATCHES} matched files — results are "
-    "capped to avoid exhausting the context window. There may be more matching files not "
-    "shown. Narrow the search with a more specific root, path_glob, or query before "
-    f"retrying. {LOG_REVERSE_SEARCH_GUIDANCE}"
+    "capped to avoid exhausting the context window and there is no offset pagination. "
+    "There may be more matching files not shown. Narrow the search with a more specific "
+    f"root, path_glob, or query before retrying. {LOG_REVERSE_SEARCH_GUIDANCE}"
 )
 
 HINT_SEARCH_NO_MATCHES = (
@@ -258,7 +266,7 @@ HINT_REVERSE_SEARCH_NO_MATCHES = (
     "No matches were found in this file. Verify the query text against the "
     "exact runtime string you expect from the relevant code logic. Verify this is the "
     "correct remote log or runtime file; if the path may be wrong, use "
-    f"{TOOL_LIST_TREE} or {TOOL_SEARCH_FILES} first. {SYNC_OR_TRIGGER_GUIDANCE}"
+    f"{TOOL_LIST_TREE} or {TOOL_GREP} first. {SYNC_OR_TRIGGER_GUIDANCE}"
 )
 
 HINT_REVERSE_SEARCH_INVALID_ARGUMENT = (

@@ -233,7 +233,7 @@ def test_enabled_plugins_can_register_remote_fs_with_remote_prefixed_names(
     assert [tool.name for tool in tools] == [
         "remote_describe_environment",
         "remote_list_tree",
-        "remote_search_files",
+        "remote_grep",
         "remote_read_file",
         "remote_search_file_reverse",
     ]

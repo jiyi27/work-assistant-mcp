@@ -9,15 +9,15 @@ from .constants import MAX_SEARCH_MATCHES
 from .service import RemoteFsService
 from .strings import (
     DESCRIBE_ENVIRONMENT_DESCRIPTION,
+    GREP_DESCRIPTION,
     LIST_TREE_DESCRIPTION,
     READ_FILE_DESCRIPTION,
     SEARCH_FILE_REVERSE_DESCRIPTION,
-    SEARCH_FILES_DESCRIPTION,
     TOOL_DESCRIBE_ENVIRONMENT,
+    TOOL_GREP,
     TOOL_LIST_TREE,
     TOOL_READ_FILE,
     TOOL_SEARCH_FILE_REVERSE,
-    TOOL_SEARCH_FILES,
 )
 
 
@@ -38,7 +38,7 @@ def register_remote_fs_tools(mcp: FastMCP, settings: Settings) -> None:
     ) -> dict[str, Any]:
         return svc.list_tree(path, offset)
 
-    @mcp.tool(name=TOOL_SEARCH_FILES, description=SEARCH_FILES_DESCRIPTION)
+    @mcp.tool(name=TOOL_GREP, description=GREP_DESCRIPTION)
     async def search_files(
         query: Annotated[
             str,
