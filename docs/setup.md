@@ -1,137 +1,120 @@
 # 配置与部署
 
-`work-mcp` 现在有两种推荐运行方式
+这份文档只保留运行方式和最小配置建议。字段级说明、完整示例和工具清单以 [README.md](../README.md) 为准。
 
-- 本地模式: 只启用 `jira`, 通过 `stdio` 由 MCP 客户端直接拉起本地子进程
-- 远程模式: 只启用 `database` 和 `log_search`, 通过 HTTP 暴露 `/mcp` 端点给客户端连接
+## 配置原则
 
-## 1. 安装
+所有运行时配置都放在 `config.yaml`。
 
-前置条件:需要先安装 python 包管理器 [uv](https://docs.astral.sh/uv/)
+启动时只会读取并校验 `plugins.enabled` 里列出的插件配置。未启用插件的配置段即使保留在 `config.yaml` 中，也不会阻塞启动。
 
-```bash
-git clone <你的仓库地址> work-mcp
-cd work-mcp
-uv sync
-```
-
-## 2. 初始化配置
-
-运行
-
-```bash
-make init
-```
-
-向导会先问当前运行环境
-
-- `1. 远程服务器`
-- `2. 本地`
-
-当前行为是固定的
-
-- 选择"本地"后, 只保留 `jira`
-- 选择"远程服务器"后, 只保留 `database` 和 `log_search`
-
-同时, 向导会清理不属于当前模式的旧插件配置和对应凭据
-
-## 3. 连接客户端
-
-### 3.1. 本地模式
-先·
-本地模式推荐使用 `stdio`, 原因是客户端和 `work-mcp` 在同一台机器上时, 客户端可以直接启动本地子进程, 不需要额外开放 HTTP 端口
-
-客户端配置示例
-
-```json
-{
-  "mcpServers": {
-    "work-mcp": {
-      "command": "uv", 
-      "args": ["run", "work-mcp"], 
-      "cwd": "/absolute/path/to/work-mcp/.venv/bin/work-mcp"
-    }
-  }
-}
-```
-
-比如 Claude Code 直接执行:
-```bash
-claude mcp add work-mcp -- /Path/to/work-mcp/.venv/bin/work-mcp
-```
-
-配置完成后, 客户端会自动拉起 `work-mcp`, 通常不需要你手动启动 mcp server
-
-### 3.2. 远程模式
-
-远程模式需要使用 HTTP, 原因是 `stdio` 依赖客户端直接在本机拉起子进程, 而远程服务器无法用这种方式把标准输入输出直接交给客户端
-
-服务端启动
-
-```bash
-make run
-```
-
-默认监听
-
-- `0.0.0.0:8182`
-
-MCP 端点
-
-```text
-http://<server-host>:8182/mcp
-```
-
-如果要改地址
-
-```bash
-make run HOST=127.0.0.1 PORT=9000
-```
-
-然后让支持 Streamable HTTP 的 MCP 客户端连接
-
-```text
-http://<server-host>:<port>/mcp
-```
-
-## 4. 补充说明 (非必要)
-
-### 4.1. Jira 状态校准
-
-本地模式启用 `jira` 后, `make init` 会先写入一组默认占位值, 通常你还需要根据自己项目的实际工作流状态修改 `config.yaml`
-
-先查询
-
-```bash
-uv run python scripts/inspect_jira_issue_workflow.py <ISSUE-KEY>
-```
-
-再按输出结果调整 `jira.latest_assigned_statuses`, `jira.start_target_status`, `jira.resolve_target_status`
-
-### 4.2. 单独验证配置
-
-如果手动修改了 `.env` 或 `config.yaml`, 可以单独运行
+如果需要在启动前检查配置和连通性，执行：
 
 ```bash
 make check
 ```
 
-只会检查当前启用插件的配置与连通性。有 `[error]` 时先修正配置再启动服务。
+它只检查当前启用的插件。
 
-### 4.3. SQL Server 依赖
+## 推荐运行方式
 
-如果远程模式使用 SQL Server, 需要先在主机上安装 ODBC Driver 18 for SQL Server, 字段和示例见 [`config.example.yaml`](../config.example.yaml)
+推荐按部署位置区分两种模式。
 
-### 4.4. 手动配置文件
+- 本地模式：通常启用 `jira`，通过 `stdio` 由 MCP 客户端直接拉起本地进程。
+- 远程模式：通常启用 `database`、`log_search`、`remote_fs`，通过 HTTP 暴露 `/mcp` 端点。
 
-如果不使用 `make init`, 可以手动初始化
+这只是推荐，不是强约束。实际启用哪些插件，以 `config.yaml` 中的 `plugins.enabled` 为准。
+
+## 本地模式
+
+最小示例：
+
+```yaml
+plugins:
+  enabled:
+    - jira
+
+jira:
+  base_url: https://your-jira-instance.example.com
+  api_token: your_jira_api_token_here
+  project_key: PROJECT1
+  latest_assigned_statuses:
+    - 待处理
+    - 已接收
+  start_target_status: 已接收
+  resolve_target_status: 已解决
+```
+
+客户端通常直接拉起：
+
+```json
+{
+  "mcpServers": {
+    "work-mcp": {
+      "command": "uv",
+      "args": ["run", "work-mcp"],
+      "cwd": "/absolute/path/to/work-mcp"
+    }
+  }
+}
+```
+
+也可以直接运行：
 
 ```bash
-cp .env.example .env
+uv run work-mcp
+```
+
+## 远程模式
+
+最小示例：
+
+```yaml
+plugins:
+  enabled:
+    - database
+    - log_search
+
+database:
+  type: mysql
+  host: your-db-host.example.com
+  user: readonly_user
+  password: your_password_here
+
+log_search:
+  log_base_dir: /absolute/path/to/logs
+```
+
+HTTP 方式启动：
+
+```bash
+make run
+```
+
+默认监听 `0.0.0.0:8182`，MCP 端点为：
+
+```text
+http://<server-host>:8182/mcp
+```
+
+如需覆盖地址或端口：
+
+```bash
+make run HOST=127.0.0.1 PORT=9000
+```
+
+## 手动初始化
+
+如果还没有配置文件，可以直接复制模板：
+
+```bash
 cp config.example.yaml config.yaml
 ```
 
-- `.env` 只放敏感凭据
-- `config.yaml` 只放非敏感配置
+然后按实际需要删掉未启用插件，或只保留你准备启用的插件配置。
 
-所有字段说明见 [`config.example.yaml`](../config.example.yaml)
+## 说明
+
+- 当前不再推荐使用配置引导脚本作为主流程。
+- 如果你只是想知道某个字段怎么填，看 [README.md](../README.md)。
+- 如果你需要 SQL Server，先在运行机器上安装 ODBC Driver 18 for SQL Server。

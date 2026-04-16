@@ -8,13 +8,15 @@ Tools are grouped by plugin. Each plugin is enabled or disabled as a unit in `co
 | ----------- | ------------------------------------------------------------------- |
 | `database`  | `db_list_databases`, `db_list_tables`, `db_get_table_schema`, `db_execute_query` |
 | `dingtalk`  | `dingtalk_send_markdown`                                            |
-| `jira`      | `jira_get_latest_assigned_issue`, `jira_start_issue`, `jira_resolve_issue` |
+| `jira`      | `jira_list_open_assigned_issues`, `jira_get_issue_details`, `jira_start_issue`, `jira_resolve_issue` |
 | `log_search` | `list_log_files`, `search_log` |
 | `remote_fs` | `remote_get_allowed_roots`, `remote_list_tree`, `remote_search_files`, `remote_read_file`, `remote_search_file_reverse` |
 
 ## Configuration
 
 All configuration lives in `config.yaml`. To disable a plugin and all its tools, comment out its name in `plugins.enabled`.
+
+Startup only parses and validates plugins listed in `plugins.enabled`. Disabled plugin sections are ignored during startup, so they may remain in `config.yaml` without blocking the server.
 
 ### Database
 
@@ -60,7 +62,7 @@ database:
 - SQL Server requires the Microsoft ODBC Driver installed on the host. `driver` must match the installed driver name.
 - `trust_server_certificate: true` is only appropriate for environments where you intentionally bypass certificate validation (SQL Server only).
 - MySQL uses `pymysql` — no ODBC driver needed. `driver` and `trust_server_certificate` are ignored for MySQL.
-- When `startup.healthcheck.enabled=true`, the database plugin performs a live connectivity probe on startup. Startup stops if the connection fails.
+- To verify config and connectivity before startup, run `make check`. It only checks enabled plugins.
 
 ### DingTalk
 
@@ -101,7 +103,7 @@ jira:
   base_url: https://your-jira-instance.example.com
   api_token: your_jira_api_token_here
   project_key: PROJECT1
-  latest_assigned_statuses:  # statuses that jira_get_latest_assigned_issue will return
+  latest_assigned_statuses:  # statuses that jira_list_open_assigned_issues will return
     - 待处理
     - 已接收
     - 处理中
@@ -114,7 +116,7 @@ jira:
 
 - `api_token` — create one at your Jira profile → Personal Access Tokens.
 - `project_key` — the short key for the project this server is allowed to query and update (e.g. `IOS`, `PROJECT1`).
-- When `startup.healthcheck.enabled=true`, the Jira plugin probes `GET /rest/api/2/serverInfo` and `GET /rest/api/2/myself` using the configured base URL and token. Startup stops if Jira is unreachable or authentication fails.
+- To verify config and connectivity before startup, run `make check`. It only checks enabled plugins.
 
 These must be **exact Jira status names** (not category names like `In Progress` or `Done`). If multiple transitions reach the same target status, the tool returns a `transition_ambiguous` error — rename statuses or adjust the workflow to resolve it.
 
