@@ -1,4 +1,4 @@
-.PHONY: run run-http run-stdio test init check
+.PHONY: run run-http run-stdio test check
 
 UV ?= uv
 HOST ?= 0.0.0.0
@@ -15,9 +15,6 @@ run-stdio:
 
 test:
 	$(UV) run --group dev python -m pytest
-
-init:
-	$(UV) run python scripts/init_config.py
 
 check:
 	$(UV) run python scripts/check.py

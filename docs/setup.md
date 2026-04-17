@@ -20,7 +20,7 @@ uv sync
 cp config.example.yaml config.yaml
 ```
 
-后面的配置都写在 `config.yaml` 里
+后面的配置都写在 `config.yaml` 里, 直接手动编辑即可, 不需要再跑单独的初始化向导
 
 ## 3. 选择要启用的插件
 

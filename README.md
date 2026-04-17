@@ -4,6 +4,28 @@ An MCP server for work-related tools used by local agents.
 
 Tools are grouped by plugin. Each plugin is enabled or disabled as a unit in `config.yaml`.
 
+## Setup
+
+1. Install dependencies:
+
+```bash
+uv sync
+```
+
+2. Create a local config file:
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+3. Edit `config.yaml` manually and enable only the plugins you need.
+
+4. Validate the config before startup:
+
+```bash
+make check
+```
+
 | Plugin | Tools                                                                    |
 | ----------- | ------------------------------------------------------------------- |
 | `database`  | `db_list_databases`, `db_list_tables`, `db_get_table_schema`, `db_execute_query` |
