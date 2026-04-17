@@ -235,7 +235,7 @@ def test_enabled_plugins_can_register_remote_fs_with_remote_prefixed_names(
         "remote_list_tree",
         "remote_grep",
         "remote_read_file",
-        "remote_search_file_reverse",
+        "remote_search_file",
     ]
 
 

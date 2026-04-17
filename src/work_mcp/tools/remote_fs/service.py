@@ -12,6 +12,7 @@ import aiofiles
 from ...config import RemoteFsSettings
 from .constants import (
     BINARY_CHECK_BYTES,
+    DEFAULT_CONTEXT_LINES,
     DEFAULT_READ_LINES,
     HIDE_TOP_LEVEL_DOTFILES,
     LIST_TREE_IGNORED_DIRECTORY_NAMES,
@@ -39,18 +40,18 @@ from .strings import (
     HINT_READ_FILE_INVALID_ARGUMENT,
     HINT_READ_FILE_LINE_OUT_OF_RANGE,
     HINT_READ_FILE_TRUNCATED,
-    HINT_REVERSE_SEARCH_COMPLETE,
-    HINT_REVERSE_SEARCH_INVALID_ARGUMENT,
-    HINT_REVERSE_SEARCH_INVALID_REGEX,
-    HINT_REVERSE_SEARCH_NO_MATCHES,
-    HINT_REVERSE_SEARCH_TRUNCATED,
     HINT_ROOTS_FOUND,
+    HINT_SEARCH_FILE_INVALID_ARGUMENT,
+    HINT_SEARCH_FILE_INVALID_REGEX,
     HINT_SEARCH_COMPLETE,
     HINT_SEARCH_INVALID_ARGUMENT,
     HINT_SEARCH_INVALID_REGEX,
     HINT_SEARCH_NO_MATCHES,
     HINT_SEARCH_TRUNCATED,
     build_list_tree_hint,
+    build_search_file_complete_hint,
+    build_search_file_no_matches_hint,
+    build_search_file_truncated_hint,
 )
 
 
@@ -499,30 +500,28 @@ class RemoteFsService:
         return result
 
     # ------------------------------------------------------------------
-    # search_file_reverse
+    # search_file
     # ------------------------------------------------------------------
 
-    async def search_file_reverse(
+    async def search_file(
         self,
         path: str,
         query: str,
-        max_matches: int,
-        before: int,
-        after: int,
         regex: bool,
+        from_end: bool,
     ) -> dict[str, Any]:
         query = query.strip()
         if not query:
             return {
                 "success": False,
                 "error_type": "invalid_argument",
-                "hint": HINT_REVERSE_SEARCH_INVALID_ARGUMENT,
+                "hint": HINT_SEARCH_FILE_INVALID_ARGUMENT,
             }
         normalized_query = query.lower()
 
-        max_matches = min(max(1, max_matches), MAX_REVERSE_MATCHES)
-        before = min(max(0, before), MAX_CONTEXT_LINES)
-        after = min(max(0, after), MAX_CONTEXT_LINES)
+        max_matches = MAX_REVERSE_MATCHES
+        before = min(DEFAULT_CONTEXT_LINES, MAX_CONTEXT_LINES)
+        after = min(DEFAULT_CONTEXT_LINES, MAX_CONTEXT_LINES)
         # Verify path is within allowed roots, is a file, and is readable text.
         file_path, error = self._resolve_text_file(path)
         if error is not None:
@@ -537,7 +536,7 @@ class RemoteFsService:
                 return {
                     "success": False,
                     "error_type": "invalid_regex",
-                    "hint": HINT_REVERSE_SEARCH_INVALID_REGEX,
+                    "hint": HINT_SEARCH_FILE_INVALID_REGEX,
                 }
 
         async with aiofiles.open(
@@ -550,7 +549,12 @@ class RemoteFsService:
         search_hits: list[dict[str, Any]] = []
         truncated = False
 
-        for line_idx in range(len(all_lines) - 1, -1, -1):
+        line_indexes = (
+            range(len(all_lines) - 1, -1, -1)
+            if from_end
+            else range(len(all_lines))
+        )
+        for line_idx in line_indexes:
             if len(search_hits) >= max_matches:
                 truncated = True
                 break
@@ -580,7 +584,7 @@ class RemoteFsService:
                 "path": str(file_path),
                 "matches": [],
                 "truncated": False,
-                "hint": HINT_REVERSE_SEARCH_NO_MATCHES,
+                "hint": build_search_file_no_matches_hint(from_end=from_end),
             }
 
         return {
@@ -589,8 +593,8 @@ class RemoteFsService:
             "matches": search_hits,
             "truncated": truncated,
             "hint": (
-                HINT_REVERSE_SEARCH_TRUNCATED
+                build_search_file_truncated_hint(from_end=from_end)
                 if truncated
-                else HINT_REVERSE_SEARCH_COMPLETE
+                else build_search_file_complete_hint(from_end=from_end)
             ),
         }

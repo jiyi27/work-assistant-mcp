@@ -13,8 +13,6 @@ This file is written for coding agents working in this repository. Follow these 
 
 ## Architecture & Design Patterns
 
-- **Single composition root**: Keep server bootstrapping in `server.py`. Integration modules should register their tools there; they should not construct separate MCP server instances.
-- **Config at the boundary**: Read environment variables in `config.py`, validate once, and pass typed settings into runtime code. Avoid scattered `os.getenv()` calls across tool modules.
 - **Actionable failures**: Raise concise `RuntimeError` messages for user-fixable issues such as missing config, invalid arguments, network failures, or upstream API errors.
 - **Deterministic tool contract**: Successful tools should return structured dictionaries with stable keys. Avoid returning free-form text when structured data is possible.
 - **MCP tool design**: Before adding or modifying any tool, read [docs/tool-design.md](docs/tool-design.md). It covers naming conventions, description style, parameter annotations, output shape, error categories, and what must not appear in tool output.

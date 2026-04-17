@@ -12,6 +12,7 @@ from work_mcp.tools.remote_fs.path_guard import (
     resolve_allowed_path,
 )
 from work_mcp.tools.remote_fs.constants import (
+    DEFAULT_CONTEXT_LINES,
     MAX_FILE_SIZE_BYTES,
     MAX_TREE_ENTRIES,
 )
@@ -454,48 +455,61 @@ class TestSearchFileReverse:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(str(root_b / "server.log"), "ERROR", 5, 1, 1, False)
+            svc.search_file(str(root_b / "server.log"), "ERROR", False, True)
         )
         assert result["success"] is True
         assert len(result["matches"]) >= 1
         lines = [m["line"] for m in result["matches"]]
         assert lines == sorted(lines, reverse=True)
+        assert "from the end of the file" in result["hint"]
+
+    def test_forward_search_follows_file_order(self, sample_tree: tuple[Path, Path]) -> None:
+        root_a, root_b = sample_tree
+        svc = _make_service((root_a, root_b))
+        result = _run(
+            svc.search_file(str(root_b / "server.log"), "ERROR", False, False)
+        )
+        assert result["success"] is True
+        lines = [m["line"] for m in result["matches"]]
+        assert lines == sorted(lines)
+        assert "from the beginning of the file" in result["hint"]
 
     def test_no_matches(self, sample_tree: tuple[Path, Path]) -> None:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(
-                str(root_b / "server.log"), "NONEXISTENT", 5, 1, 1, False,
+            svc.search_file(
+                str(root_b / "server.log"), "NONEXISTENT", False, True,
             )
         )
         assert result["success"] is True
         assert result["matches"] == []
+        assert "scanning from the end" in result["hint"]
 
     def test_empty_query_rejected(self, sample_tree: tuple[Path, Path]) -> None:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
-        result = _run(svc.search_file_reverse(str(root_b / "server.log"), "  ", 5, 1, 1, False))
+        result = _run(svc.search_file(str(root_b / "server.log"), "  ", False, True))
         assert result["success"] is False
         assert result["error_type"] == "invalid_argument"
 
-    def test_context_lines(self, sample_tree: tuple[Path, Path]) -> None:
+    def test_context_lines_use_default_window(self, sample_tree: tuple[Path, Path]) -> None:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
-        result = _run(svc.search_file_reverse(str(root_b / "server.log"), "ERROR", 1, 2, 2, False))
+        result = _run(svc.search_file(str(root_b / "server.log"), "ERROR", False, True))
         assert result["success"] is True
         match = result["matches"][0]
         assert isinstance(match["before"], list)
         assert isinstance(match["after"], list)
-        assert len(match["before"]) <= 2
-        assert len(match["after"]) <= 2
+        assert len(match["before"]) <= DEFAULT_CONTEXT_LINES
+        assert len(match["after"]) <= DEFAULT_CONTEXT_LINES
 
     def test_regex_search(self, sample_tree: tuple[Path, Path]) -> None:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(
-                str(root_b / "server.log"), r"ERROR.*line \d+", 5, 0, 0, True,
+            svc.search_file(
+                str(root_b / "server.log"), r"ERROR.*line \d+", True, True,
             )
         )
         assert result["success"] is True
@@ -505,7 +519,7 @@ class TestSearchFileReverse:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(str(root_b / "server.log"), "error", 5, 0, 0, False)
+            svc.search_file(str(root_b / "server.log"), "error", False, True)
         )
         assert result["success"] is True
         assert len(result["matches"]) >= 1
@@ -516,8 +530,8 @@ class TestSearchFileReverse:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(
-                str(root_b / "server.log"), r"error.*line \d+", 5, 0, 0, True,
+            svc.search_file(
+                str(root_b / "server.log"), r"error.*line \d+", True, True,
             )
         )
         assert result["success"] is True
@@ -527,7 +541,7 @@ class TestSearchFileReverse:
         root_a, root_b = sample_tree
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(str(root_b / "server.log"), "[invalid", 5, 0, 0, True)
+            svc.search_file(str(root_b / "server.log"), "[invalid", True, True)
         )
         assert result["success"] is False
         assert result["error_type"] == "invalid_regex"
@@ -538,7 +552,7 @@ class TestSearchFileReverse:
         large_file.write_bytes(b"a" * (MAX_FILE_SIZE_BYTES + 1))
         svc = _make_service((root_a, root_b))
         result = _run(
-            svc.search_file_reverse(str(large_file), "ERROR", 5, 0, 0, False)
+            svc.search_file(str(large_file), "ERROR", False, True)
         )
         assert result["success"] is False
         assert result["error_type"] == "file_too_large"

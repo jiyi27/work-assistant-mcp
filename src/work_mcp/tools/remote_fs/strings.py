@@ -15,7 +15,7 @@ TOOL_DESCRIBE_ENVIRONMENT = "remote_describe_environment"
 TOOL_LIST_TREE = "remote_list_tree"
 TOOL_GREP = "remote_grep"
 TOOL_READ_FILE = "remote_read_file"
-TOOL_SEARCH_FILE_REVERSE = "remote_search_file_reverse"
+TOOL_SEARCH_FILE = "remote_search_file"
 
 # ---------------------------------------------------------------------------
 # Tool descriptions — short, agent-oriented.
@@ -56,10 +56,13 @@ Read a selected text range from a known file on the remote server filesystem, no
 Use this only after identifying the remote path through {TOOL_DESCRIBE_ENVIRONMENT}, {TOOL_LIST_TREE}, or {TOOL_GREP}.
 """
 
-SEARCH_FILE_REVERSE_DESCRIPTION = f"""\
-Search a single known file on the remote server from the end, returning the newest matches first.
+SEARCH_FILE_DESCRIPTION = f"""\
+Search a single known file on the remote server and return matched lines with nearby context.
 
-Use this for log inspection when the exact remote file path is already known.
+Use this for log inspection or focused file analysis when the exact remote file path is
+already known. Set from_end=true to scan from the end and surface the newest matches first.
+Set from_end=false to scan from the beginning when chronological order matters.
+
 For cross-file content search or to locate the file path first, use {TOOL_GREP} instead.
 """
 
@@ -94,7 +97,7 @@ HINT_BINARY_FILE_NOT_SUPPORTED = (
 
 HINT_FILE_TOO_LARGE = (
     f"The file is larger than {MAX_FILE_SIZE_MB} MB. Do not read it directly with "
-    f"{TOOL_READ_FILE} or {TOOL_SEARCH_FILE_REVERSE}. Narrow the target file first "
+    f"{TOOL_READ_FILE} or {TOOL_SEARCH_FILE}. Narrow the target file first "
     f"or {STOP_AND_NOTIFY_USER_INSTRUCTION}: the file is too large for this tool."
 )
 
@@ -182,7 +185,7 @@ SYNC_OR_TRIGGER_GUIDANCE = (
 LOG_REVERSE_SEARCH_GUIDANCE = (
     "These matches come from a broad cross-file search and are not intended to "
     "identify the newest log entry. If the target is a log file and you already "
-    f"know its path, use {TOOL_SEARCH_FILE_REVERSE} to find the most recent "
+    f"know its path, use {TOOL_SEARCH_FILE} with from_end=true to find the most recent "
     "matching log lines first."
 )
 
@@ -190,7 +193,7 @@ HINT_SEARCH_COMPLETE = (
     "Matches were found. For content search results, use "
     f"{TOOL_READ_FILE} to read a range around the returned line number. "
     f"For filename-only results (line is null), use {TOOL_READ_FILE} or "
-    f"{TOOL_SEARCH_FILE_REVERSE} to inspect the file."
+    f"{TOOL_SEARCH_FILE} to inspect the file."
 )
 
 HINT_SEARCH_TRUNCATED = (
@@ -205,8 +208,8 @@ HINT_SEARCH_NO_MATCHES = (
     f"{SEARCH_SCOPE_GUIDANCE} "
     f"{RUNTIME_CODE_CONFIRMATION_GUIDANCE} "
     f"{SYNC_OR_TRIGGER_GUIDANCE} "
-    f"If the target is a log file and you already know its path, use {TOOL_SEARCH_FILE_REVERSE} "
-    "instead of broad cross-file search. For filename-only search, leave query "
+    f"If the target is a log file and you already know its path, use {TOOL_SEARCH_FILE} "
+    "with from_end=true instead of broad cross-file search. For filename-only search, leave query "
     "empty and set path_glob."
 )
 
@@ -246,33 +249,49 @@ HINT_READ_FILE_LINE_OUT_OF_RANGE = (
 )
 
 # ---------------------------------------------------------------------------
-# search_file_reverse hints
+# search_file hints
 # ---------------------------------------------------------------------------
-HINT_REVERSE_SEARCH_COMPLETE = (
-    "Recent matches were found. Use the returned context to analyze the issue. "
-    f"If more surrounding lines are needed, call {TOOL_READ_FILE} for the "
-    "matched path and line range."
-)
+def build_search_file_complete_hint(*, from_end: bool) -> str:
+    direction = (
+        "Results were scanned from the end of the file, so the newest matches appear first."
+        if from_end
+        else "Results were scanned from the beginning of the file, so matches follow file order."
+    )
+    return (
+        f"{direction} Use the returned context to analyze the issue. If more surrounding "
+        f"lines are needed, call {TOOL_READ_FILE} for the matched path and line range."
+    )
 
-HINT_REVERSE_SEARCH_TRUNCATED = (
-    f"Returned the {MAX_REVERSE_MATCHES} most recent matches — results are capped to avoid "
-    "flooding the context with log lines. There may be more older matches further back in "
-    "the file. To see fewer, more targeted results, retry with a more specific query. To "
-    f"read surrounding context for a specific hit, call {TOOL_READ_FILE} with the matched "
-    "path and line range."
-)
+def build_search_file_truncated_hint(*, from_end: bool) -> str:
+    direction = (
+        f"Results were scanned from the end of the file, and the newest {MAX_REVERSE_MATCHES} matches were returned because from_end=true."
+        if from_end
+        else f"Results were scanned from the beginning of the file, and the first {MAX_REVERSE_MATCHES} matches were returned because from_end=false."
+    )
+    return (
+        f"{direction} Results are capped to avoid flooding the context with file content. "
+        "There may be more matches outside the returned window. To see fewer, more targeted "
+        f"results, retry with a more specific query. To read surrounding context for a specific "
+        f"hit, call {TOOL_READ_FILE} with the matched path and line range."
+    )
 
-HINT_REVERSE_SEARCH_NO_MATCHES = (
-    "No matches were found in this file. Verify the query text against the "
-    "exact runtime string you expect from the relevant code logic. Verify this is the "
-    "correct remote log or runtime file; if the path may be wrong, use "
-    f"{TOOL_LIST_TREE} or {TOOL_GREP} first. {SYNC_OR_TRIGGER_GUIDANCE}"
-)
+def build_search_file_no_matches_hint(*, from_end: bool) -> str:
+    direction = (
+        "No matches were found when scanning from the end of this file."
+        if from_end
+        else "No matches were found when scanning from the beginning of this file."
+    )
+    return (
+        f"{direction} Verify the query text against the exact runtime string you expect "
+        "from the relevant code logic. Verify this is the correct remote log or runtime "
+        f"file; if the path may be wrong, use {TOOL_LIST_TREE} or {TOOL_GREP} first. "
+        f"{SYNC_OR_TRIGGER_GUIDANCE}"
+    )
 
-HINT_REVERSE_SEARCH_INVALID_ARGUMENT = (
+HINT_SEARCH_FILE_INVALID_ARGUMENT = (
     "The search arguments are invalid. Provide a non-empty query."
 )
 
-HINT_REVERSE_SEARCH_INVALID_REGEX = (
+HINT_SEARCH_FILE_INVALID_REGEX = (
     "The query is not a valid regular expression. Fix the pattern and retry."
 )

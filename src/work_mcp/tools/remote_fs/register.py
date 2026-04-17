@@ -12,12 +12,12 @@ from .strings import (
     GREP_DESCRIPTION,
     LIST_TREE_DESCRIPTION,
     READ_FILE_DESCRIPTION,
-    SEARCH_FILE_REVERSE_DESCRIPTION,
+    SEARCH_FILE_DESCRIPTION,
     TOOL_DESCRIBE_ENVIRONMENT,
     TOOL_GREP,
     TOOL_LIST_TREE,
     TOOL_READ_FILE,
-    TOOL_SEARCH_FILE_REVERSE,
+    TOOL_SEARCH_FILE,
 )
 
 
@@ -67,16 +67,14 @@ def register_remote_fs_tools(mcp: FastMCP, settings: Settings) -> None:
         return await svc.read_file(path, start_line, max_lines, tail)
 
     @mcp.tool(
-        name=TOOL_SEARCH_FILE_REVERSE, description=SEARCH_FILE_REVERSE_DESCRIPTION
+        name=TOOL_SEARCH_FILE, description=SEARCH_FILE_DESCRIPTION
     )
-    async def search_file_reverse(
+    async def search_file(
         path: str,
         query: str,
-        max_matches: Annotated[int, "Maximum number of matches to return."] = 20,
-        before: Annotated[int, "Number of context lines before each match."] = 3,
-        after: Annotated[int, "Number of context lines after each match."] = 3,
         regex: Annotated[bool, "Treat query as a regular expression."] = False,
+        from_end: Annotated[
+            bool, "Scan from the end of the file when true, or from the beginning when false."
+        ] = True,
     ) -> dict[str, Any]:
-        return await svc.search_file_reverse(
-            path, query, max_matches, before, after, regex,
-        )
+        return await svc.search_file(path, query, regex, from_end)
