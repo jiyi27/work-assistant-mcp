@@ -22,12 +22,10 @@ remote_fs:
   roots:
     - name: logs
       path: /var/log/myapp
-      kind: logs
       description: Application log files
 
     - name: config
       path: /etc/myapp
-      kind: config
       description: Production configuration
 
 

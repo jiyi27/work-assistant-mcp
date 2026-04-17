@@ -220,7 +220,6 @@ def test_enabled_plugins_can_register_remote_fs_with_remote_prefixed_names(
                     AllowedRoot(
                         name="app",
                         path=remote_root,
-                        kind="remote",
                         description="Remote application root",
                     ),
                 )

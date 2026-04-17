@@ -21,7 +21,7 @@ TOOL_SEARCH_FILE = "remote_search_file"
 # Tool descriptions — short, agent-oriented.
 # ---------------------------------------------------------------------------
 DESCRIBE_ENVIRONMENT_DESCRIPTION = """\
-Return the remote server's root directories with their paths, roles, and descriptions.
+Return the remote server's root directories with their paths and descriptions.
 
 Use this early in a remote-debugging session to learn what environment information is
 available here, such as where synced project code, logs, config, runtime files, or

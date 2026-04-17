@@ -42,7 +42,6 @@ class LogSearchSettings:
 class AllowedRoot:
     name: str
     path: Path
-    kind: str
     description: str
 
 
@@ -225,7 +224,6 @@ def _read_remote_fs_settings(yaml_cfg: dict[str, Any]) -> RemoteFsSettings | Non
             )
         name = _read_text(raw_root.get("name"))
         raw_path = _read_text(raw_root.get("path"))
-        kind = _read_text(raw_root.get("kind"))
         description = _read_text(raw_root.get("description"))
         if not name:
             raise RuntimeError(
@@ -234,10 +232,6 @@ def _read_remote_fs_settings(yaml_cfg: dict[str, Any]) -> RemoteFsSettings | Non
         if not raw_path:
             raise RuntimeError(
                 f"Missing remote_fs.roots[{idx}].path in config.yaml."
-            )
-        if not kind:
-            raise RuntimeError(
-                f"Missing remote_fs.roots[{idx}].kind in config.yaml."
             )
         if not description:
             raise RuntimeError(
@@ -252,9 +246,7 @@ def _read_remote_fs_settings(yaml_cfg: dict[str, Any]) -> RemoteFsSettings | Non
             raise RuntimeError(
                 f"remote_fs.roots[{idx}].path is not a directory: {raw_path}"
             )
-        roots.append(AllowedRoot(
-            name=name, path=resolved, kind=kind, description=description,
-        ))
+        roots.append(AllowedRoot(name=name, path=resolved, description=description))
     return RemoteFsSettings(roots=tuple(roots))
 
 

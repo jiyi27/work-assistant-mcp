@@ -148,7 +148,6 @@ remote_fs:
   roots:
     - name: app
       path: /tmp
-      kind: workplace
       description: first line
   second line without colon
 """.strip(),
@@ -401,7 +400,6 @@ remote_fs:
   roots:
     - name: app
       path: /path/that/does/not/exist
-      kind: code
       description: invalid while disabled
 """.strip(),
         encoding="utf-8",

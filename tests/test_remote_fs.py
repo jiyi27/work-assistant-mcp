@@ -56,11 +56,11 @@ def sample_tree(root_dirs: tuple[Path, Path]) -> tuple[Path, Path]:
     return root_a, root_b
 
 
-def _make_settings(*roots: tuple[str, Path, str, str]) -> RemoteFsSettings:
+def _make_settings(*roots: tuple[str, Path, str]) -> RemoteFsSettings:
     return RemoteFsSettings(
         roots=tuple(
-            AllowedRoot(name=name, path=path.resolve(), kind=kind, description=desc)
-            for name, path, kind, desc in roots
+            AllowedRoot(name=name, path=path.resolve(), description=desc)
+            for name, path, desc in roots
         )
     )
 
@@ -68,8 +68,8 @@ def _make_settings(*roots: tuple[str, Path, str, str]) -> RemoteFsSettings:
 def _make_service(root_dirs: tuple[Path, Path]) -> RemoteFsService:
     root_a, root_b = root_dirs
     settings = _make_settings(
-        ("app", root_a, "code", "Application source"),
-        ("logs", root_b, "logs", "Log files"),
+        ("app", root_a, "Application source"),
+        ("logs", root_b, "Log files"),
     )
     return RemoteFsService(settings)
 

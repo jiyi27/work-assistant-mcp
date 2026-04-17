@@ -177,17 +177,14 @@ remote_fs:
   roots:
     - name: app
       path: /srv/myapp
-      kind: code
       description: Deployed application source
 
     - name: logs
       path: /var/log/myapp
-      kind: logs
       description: Application log files
 
     - name: config
       path: /etc/myapp
-      kind: config
       description: Production configuration
 ```
 

@@ -184,7 +184,6 @@ class RemoteFsService:
             {
                 "name": r.name,
                 "path": str(r.path),
-                "kind": r.kind,
                 "description": r.description,
             }
             for r in self._settings.roots

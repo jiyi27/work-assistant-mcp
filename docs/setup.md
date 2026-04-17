@@ -138,24 +138,21 @@ remote_fs:
   roots:
     - name: app
       path: /srv/myapp
-      kind: code
       description: Deployed application source
 
     - name: logs
       path: /var/log/myapp
-      kind: logs
       description: Application log files
 
     - name: config
       path: /etc/myapp
-      kind: config
       description: Production configuration
 ```
 
 - `roots` 里每一项都是一个允许访问的根目录
 - `name` 是给 agent 看的短名字
 - `path` 必须是服务器上真实存在的目录
-- `kind` 和 `description` 主要是帮助 agent 理解这个目录是干什么的
+- `description` 主要是帮助 agent 理解这个目录是干什么的
 
 ### 4.4. DingTalk
 

@@ -46,8 +46,8 @@ EXCEPTION
 
 SERVER ROOTS
 - The server may expose one or more allowed roots such as:
-  - `kind=logs` for log inspection
-  - `kind=config` for runtime config and constants
+  - application logs
+  - runtime config and constants
 - Call `remote_describe_environment` at the start of a session when the available roots are not already known.
 - If the roots were already established earlier in the conversation, do not call it again unnecessarily.
 
