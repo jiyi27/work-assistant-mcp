@@ -68,7 +68,7 @@ MAX_REVERSE_MATCHES = 20
 MAX_CONTEXT_LINES = 10
 
 # Default context lines for search_file.
-DEFAULT_CONTEXT_LINES = 2
+DEFAULT_CONTEXT_LINES = 1
 
 # Bytes to sample from the start of a file to detect binary content.
 BINARY_CHECK_BYTES = 8192
