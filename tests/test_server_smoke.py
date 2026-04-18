@@ -12,6 +12,9 @@ from urllib.parse import parse_qs, urlsplit
 
 from work_mcp.config import (
     AllowedRoot,
+    DingtalkSettings,
+    JiraSettings,
+    LoggingSettings,
     RemoteFsSettings,
     ServerSettings,
     Settings,
@@ -30,19 +33,22 @@ _DEFAULT_SERVER = ServerSettings(transport="stdio", host=None, port=None)
 def _make_settings(**overrides: object) -> Settings:
     defaults = dict(
         server=_DEFAULT_SERVER,
-        dingtalk_webhook_url="https://example.invalid/webhook",
-        dingtalk_secret=None,
-        jira_base_url="https://jira.example.invalid",
-        jira_api_token="jira-token",
-        jira_project_key="IOS",
-        log_dir=Path("logs"),
-        log_level="info",
+        logging=LoggingSettings(dir=Path("logs"), level="info"),
         enabled_plugins=("dingtalk",),
-        jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
-        jira_start_target_status="已接收",
-        jira_resolve_target_status="已解决",
-        jira_attachment_max_images=5,
-        jira_attachment_max_bytes=1_048_576,
+        dingtalk=DingtalkSettings(
+            webhook_url="https://example.invalid/webhook",
+            secret=None,
+        ),
+        jira=JiraSettings(
+            base_url="https://jira.example.invalid",
+            api_token="jira-token",
+            project_key="IOS",
+            latest_assigned_statuses=("待处理", "已接收", "处理中"),
+            start_target_status="已接收",
+            resolve_target_status="已解决",
+            attachment_max_images=5,
+            attachment_max_bytes=1_048_576,
+        ),
         log_search=None,
         database=None,
     )
@@ -84,7 +90,7 @@ def test_dingtalk_send_markdown_returns_structured_result() -> None:
 
 
 def test_dingtalk_send_markdown_writes_success_log(tmp_path: Path) -> None:
-    mcp = create_mcp(_make_settings(log_dir=tmp_path))
+    mcp = create_mcp(_make_settings(logging=LoggingSettings(dir=tmp_path, level="info")))
     with patch(
         "work_mcp.tools.dingtalk.request_json",
         return_value={"errcode": 0, "errmsg": "ok"},
@@ -128,8 +134,10 @@ def test_dingtalk_send_markdown_signs_webhook_when_secret_is_configured() -> Non
 
     mcp = create_mcp(
         _make_settings(
-            dingtalk_webhook_url="https://example.invalid/webhook?access_token=test-token",
-            dingtalk_secret=secret,
+            dingtalk=DingtalkSettings(
+                webhook_url="https://example.invalid/webhook?access_token=test-token",
+                secret=secret,
+            ),
         )
     )
 

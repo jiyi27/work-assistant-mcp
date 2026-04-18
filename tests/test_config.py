@@ -72,9 +72,10 @@ jira:
     settings = config_module.get_settings()
 
     assert settings.enabled_plugins == ("jira",)
-    assert settings.dingtalk_webhook_url == ""
-    assert settings.jira_base_url == "https://jira.example.invalid"
-    assert settings.jira_project_key == "IOS"
+    assert settings.dingtalk is None
+    assert settings.jira is not None
+    assert settings.jira.base_url == "https://jira.example.invalid"
+    assert settings.jira.project_key == "IOS"
 
 
 def test_get_settings_requires_jira_credentials_when_jira_enabled(
@@ -255,8 +256,8 @@ logging:
 
     settings = config_module.get_settings()
 
-    assert settings.log_dir == Path("logs-from-yaml")
-    assert settings.log_level == "warning"
+    assert settings.logging.dir == Path("logs-from-yaml")
+    assert settings.logging.level == "warning"
 
 
 def test_get_settings_uses_stdio_by_default(
@@ -379,7 +380,7 @@ jira: disabled
 
     assert settings.enabled_plugins == ("database",)
     assert settings.database is not None
-    assert settings.jira_base_url is None
+    assert settings.jira is None
 
 
 def test_get_settings_ignores_invalid_remote_fs_section_when_remote_fs_is_disabled(

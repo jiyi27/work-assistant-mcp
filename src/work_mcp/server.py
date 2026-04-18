@@ -177,7 +177,7 @@ def main(argv: list[str] | None = None) -> None:
             host=args.host,
             port=args.port,
         )
-        configure_logger(log_dir=settings.log_dir, level=settings.log_level)
+        configure_logger(log_dir=settings.logging.dir, level=settings.logging.level)
         mcp = create_mcp(settings)
         transport = settings.server.transport
         if transport == "streamable-http":

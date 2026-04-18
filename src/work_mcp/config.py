@@ -34,6 +34,30 @@ class ServerSettings:
 
 
 @dataclass(frozen=True)
+class LoggingSettings:
+    dir: Path
+    level: str
+
+
+@dataclass(frozen=True)
+class DingtalkSettings:
+    webhook_url: str
+    secret: str | None
+
+
+@dataclass(frozen=True)
+class JiraSettings:
+    base_url: str | None
+    api_token: str | None
+    project_key: str | None
+    latest_assigned_statuses: tuple[str, ...]
+    start_target_status: str
+    resolve_target_status: str
+    attachment_max_images: int
+    attachment_max_bytes: int
+
+
+@dataclass(frozen=True)
 class LogSearchSettings:
     log_base_dir: str
 
@@ -65,19 +89,10 @@ class DatabaseSettings:
 @dataclass(frozen=True)
 class Settings:
     server: ServerSettings
-    dingtalk_webhook_url: str
-    dingtalk_secret: str | None
-    jira_base_url: str | None
-    jira_api_token: str | None
-    jira_project_key: str | None
-    log_dir: Path
-    log_level: str
+    logging: LoggingSettings
     enabled_plugins: tuple[str, ...]
-    jira_latest_assigned_statuses: tuple[str, ...]
-    jira_start_target_status: str
-    jira_resolve_target_status: str
-    jira_attachment_max_images: int
-    jira_attachment_max_bytes: int
+    dingtalk: DingtalkSettings | None
+    jira: JiraSettings | None
     log_search: LogSearchSettings | None
     database: DatabaseSettings | None = None
     remote_fs: RemoteFsSettings | None = None
@@ -170,7 +185,7 @@ def _read_string_list(section: dict[str, Any], key: str, section_name: str) -> t
     return tuple(str(item).strip() for item in raw_value if str(item).strip())
 
 
-def _read_logging_settings(yaml_cfg: dict[str, Any]) -> tuple[Path, str]:
+def _read_logging_settings(yaml_cfg: dict[str, Any]) -> LoggingSettings:
     yaml_logging = yaml_cfg.get("logging", {})
     if not isinstance(yaml_logging, dict):
         raise RuntimeError("Invalid logging section in config.yaml. Expected a mapping.")
@@ -182,7 +197,7 @@ def _read_logging_settings(yaml_cfg: dict[str, Any]) -> tuple[Path, str]:
             "Invalid logging.level in config.yaml. "
             f"Expected one of: {valid_levels}."
         )
-    return Path(log_dir_raw), log_level
+    return LoggingSettings(dir=Path(log_dir_raw), level=log_level)
 
 
 def _read_text(raw_value: Any) -> str:
@@ -191,7 +206,13 @@ def _read_text(raw_value: Any) -> str:
     return str(raw_value).strip()
 
 
-def _read_log_search_settings(yaml_cfg: dict[str, Any]) -> LogSearchSettings | None:
+def _read_log_search_settings(
+    yaml_cfg: dict[str, Any],
+    *,
+    enabled: bool,
+) -> LogSearchSettings | None:
+    if not enabled:
+        return None
     yaml_log_search = yaml_cfg.get("log_search")
     if not yaml_log_search:
         return None
@@ -203,7 +224,13 @@ def _read_log_search_settings(yaml_cfg: dict[str, Any]) -> LogSearchSettings | N
     return LogSearchSettings(log_base_dir=log_base_dir)
 
 
-def _read_remote_fs_settings(yaml_cfg: dict[str, Any]) -> RemoteFsSettings | None:
+def _read_remote_fs_settings(
+    yaml_cfg: dict[str, Any],
+    *,
+    enabled: bool,
+) -> RemoteFsSettings | None:
+    if not enabled:
+        return None
     yaml_remote_fs = yaml_cfg.get("remote_fs")
     if not yaml_remote_fs:
         return None
@@ -250,16 +277,28 @@ def _read_remote_fs_settings(yaml_cfg: dict[str, Any]) -> RemoteFsSettings | Non
     return RemoteFsSettings(roots=tuple(roots))
 
 
-def _read_dingtalk_settings(yaml_cfg: dict[str, Any]) -> tuple[str, str | None]:
+def _read_dingtalk_settings(
+    yaml_cfg: dict[str, Any],
+    *,
+    enabled: bool,
+) -> DingtalkSettings | None:
+    if not enabled:
+        return None
     yaml_dingtalk = yaml_cfg.get("dingtalk", {})
     if not isinstance(yaml_dingtalk, dict):
         raise RuntimeError("Invalid dingtalk section in config.yaml. Expected a mapping.")
     webhook_url = _read_text(yaml_dingtalk.get("webhook_url"))
     secret = _read_text(yaml_dingtalk.get("secret")) or None
-    return webhook_url, secret
+    return DingtalkSettings(webhook_url=webhook_url, secret=secret)
 
 
-def _read_jira_settings(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+def _read_jira_settings(
+    yaml_cfg: dict[str, Any],
+    *,
+    enabled: bool,
+) -> JiraSettings | None:
+    if not enabled:
+        return None
     yaml_jira = yaml_cfg.get("jira", {})
     if not isinstance(yaml_jira, dict):
         raise RuntimeError("Invalid jira section in config.yaml. Expected a mapping.")
@@ -282,29 +321,16 @@ def _read_jira_settings(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
         "jira.attachments.max_bytes_per_image",
     )
 
-    return {
-        "jira_base_url": base_url,
-        "jira_api_token": api_token,
-        "jira_project_key": project_key,
-        "jira_latest_assigned_statuses": latest_assigned_statuses,
-        "jira_start_target_status": start_target_status,
-        "jira_resolve_target_status": resolve_target_status,
-        "jira_attachment_max_images": max_images,
-        "jira_attachment_max_bytes": max_bytes,
-    }
-
-
-def _default_jira_settings() -> dict[str, Any]:
-    return {
-        "jira_base_url": None,
-        "jira_api_token": None,
-        "jira_project_key": None,
-        "jira_latest_assigned_statuses": (),
-        "jira_start_target_status": "",
-        "jira_resolve_target_status": "",
-        "jira_attachment_max_images": 5,
-        "jira_attachment_max_bytes": 1_048_576,
-    }
+    return JiraSettings(
+        base_url=base_url,
+        api_token=api_token,
+        project_key=project_key,
+        latest_assigned_statuses=latest_assigned_statuses,
+        start_target_status=start_target_status,
+        resolve_target_status=resolve_target_status,
+        attachment_max_images=max_images,
+        attachment_max_bytes=max_bytes,
+    )
 
 
 def _default_db_port(db_type: str) -> int:
@@ -317,7 +343,13 @@ def _default_db_driver(db_type: str) -> str:
     return ""
 
 
-def _read_database_settings(yaml_cfg: dict[str, Any]) -> DatabaseSettings | None:
+def _read_database_settings(
+    yaml_cfg: dict[str, Any],
+    *,
+    enabled: bool,
+) -> DatabaseSettings | None:
+    if not enabled:
+        return None
     yaml_db = yaml_cfg.get("database")
     if not yaml_db:
         return None
@@ -356,25 +388,30 @@ def _read_database_settings(yaml_cfg: dict[str, Any]) -> DatabaseSettings | None
 def validate_settings(settings: Settings) -> None:
     errors: list[str] = []
 
-    if "dingtalk" in settings.enabled_plugins and not settings.dingtalk_webhook_url:
-        errors.append("dingtalk: missing dingtalk.webhook_url in config.yaml")
+    if "dingtalk" in settings.enabled_plugins:
+        if settings.dingtalk is None:
+            errors.append("dingtalk: missing dingtalk section in config.yaml")
+        elif not settings.dingtalk.webhook_url:
+            errors.append("dingtalk: missing dingtalk.webhook_url in config.yaml")
 
     if "jira" in settings.enabled_plugins:
-        if not settings.jira_base_url:
+        if settings.jira is None:
+            errors.append("jira: missing jira section in config.yaml")
+        elif not settings.jira.base_url:
             errors.append("jira: missing jira.base_url in config.yaml")
-        if not settings.jira_api_token:
+        elif not settings.jira.api_token:
             errors.append("jira: missing jira.api_token in config.yaml")
-        if not settings.jira_project_key:
+        if settings.jira is not None and not settings.jira.project_key:
             errors.append("jira: missing jira.project_key in config.yaml")
-        if not settings.jira_latest_assigned_statuses:
+        if settings.jira is not None and not settings.jira.latest_assigned_statuses:
             errors.append("jira: missing jira.latest_assigned_statuses in config.yaml")
-        if not settings.jira_start_target_status:
+        if settings.jira is not None and not settings.jira.start_target_status:
             errors.append("jira: missing jira.start_target_status in config.yaml")
-        if not settings.jira_resolve_target_status:
+        if settings.jira is not None and not settings.jira.resolve_target_status:
             errors.append("jira: missing jira.resolve_target_status in config.yaml")
-        if settings.jira_attachment_max_images <= 0:
+        if settings.jira is not None and settings.jira.attachment_max_images <= 0:
             errors.append("jira: jira.attachments.max_images must be greater than 0")
-        if settings.jira_attachment_max_bytes <= 0:
+        if settings.jira is not None and settings.jira.attachment_max_bytes <= 0:
             errors.append(
                 "jira: jira.attachments.max_bytes_per_image must be greater than 0"
             )
@@ -430,27 +467,30 @@ def validate_settings(settings: Settings) -> None:
 def get_settings(yaml_path: Path | None = None) -> Settings:
     yaml_cfg = load_yaml_config(yaml_path)
     enabled_plugins = _read_enabled_plugins(yaml_cfg)
-    log_dir, log_level = _read_logging_settings(yaml_cfg)
-    if "dingtalk" in enabled_plugins:
-        webhook_url, dingtalk_secret = _read_dingtalk_settings(yaml_cfg)
-    else:
-        webhook_url, dingtalk_secret = "", None
-    jira_fields = (
-        _read_jira_settings(yaml_cfg)
-        if "jira" in enabled_plugins
-        else _default_jira_settings()
-    )
     settings = Settings(
         server=default_server_settings(),
-        log_dir=log_dir,
-        log_level=log_level,
+        logging=_read_logging_settings(yaml_cfg),
         enabled_plugins=enabled_plugins,
-        log_search=_read_log_search_settings(yaml_cfg) if "log_search" in enabled_plugins else None,
-        database=_read_database_settings(yaml_cfg) if "database" in enabled_plugins else None,
-        remote_fs=_read_remote_fs_settings(yaml_cfg) if "remote_fs" in enabled_plugins else None,
-        dingtalk_webhook_url=webhook_url,
-        dingtalk_secret=dingtalk_secret,
-        **jira_fields,
+        dingtalk=_read_dingtalk_settings(
+            yaml_cfg,
+            enabled="dingtalk" in enabled_plugins,
+        ),
+        jira=_read_jira_settings(
+            yaml_cfg,
+            enabled="jira" in enabled_plugins,
+        ),
+        log_search=_read_log_search_settings(
+            yaml_cfg,
+            enabled="log_search" in enabled_plugins,
+        ),
+        database=_read_database_settings(
+            yaml_cfg,
+            enabled="database" in enabled_plugins,
+        ),
+        remote_fs=_read_remote_fs_settings(
+            yaml_cfg,
+            enabled="remote_fs" in enabled_plugins,
+        ),
     )
     validate_settings(settings)
     return settings

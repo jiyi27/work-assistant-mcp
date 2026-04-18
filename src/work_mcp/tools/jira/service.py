@@ -187,7 +187,7 @@ class JiraService:
                 _api_error_message(f"downloading attachment {attachment_id} on {issue_key}", exc)
             )
 
-        if len(raw) > self._settings.jira_attachment_max_bytes:
+        if len(raw) > self._settings.jira.attachment_max_bytes:
             return self._internal_error(
                 f"Jira attachment {attachment_id} on {issue_key} exceeded the configured size limit."
             )
@@ -207,7 +207,7 @@ class JiraService:
     def start_issue(self, issue_key: str) -> dict[str, Any]:
         return self._transition_issue(
             issue_key=issue_key.strip(),
-            target_status=self._settings.jira_start_target_status,
+            target_status=self._settings.jira.start_target_status,
             success_topic="jira.start_issue.succeeded",
             operation_label="start",
         )
@@ -215,7 +215,7 @@ class JiraService:
     def resolve_issue(self, issue_key: str) -> dict[str, Any]:
         return self._transition_issue(
             issue_key=issue_key.strip(),
-            target_status=self._settings.jira_resolve_target_status,
+            target_status=self._settings.jira.resolve_target_status,
             success_topic="jira.resolve_issue.succeeded",
             operation_label="resolve",
         )
@@ -334,18 +334,20 @@ class JiraService:
         return JiraIssue.from_api(issue)
 
     def _build_open_assigned_issues_jql(self) -> str:
-        if not self._settings.jira_project_key:
+        jira = self._settings.jira
+        assert jira is not None
+        if not jira.project_key:
             raise RuntimeError(
                 "Missing JIRA_PROJECT_KEY in environment or .env. Configure one Jira project key."
             )
-        statuses = self._settings.jira_latest_assigned_statuses
+        statuses = jira.latest_assigned_statuses
         if not statuses:
             raise RuntimeError(
                 "Missing jira.latest_assigned_statuses in config.yaml. Configure at least one Jira status."
             )
         statuses_clause = ", ".join(self._quote_jql_string(value) for value in statuses)
         return (
-            f'project = "{self._settings.jira_project_key}" AND assignee = currentUser() '
+            f'project = "{jira.project_key}" AND assignee = currentUser() '
             f"AND status in ({statuses_clause}) ORDER BY updated DESC"
         )
 
@@ -368,7 +370,9 @@ class JiraService:
         }
 
     def _is_allowed_project(self, issue_key: str) -> bool:
-        configured_project = self._settings.jira_project_key
+        jira = self._settings.jira
+        assert jira is not None
+        configured_project = jira.project_key
         if not configured_project:
             return False
         issue_project = issue_key.split("-", 1)[0].strip()
@@ -390,7 +394,7 @@ class JiraService:
                     "size_bytes": int(attachment.get("size") or 0),
                 }
             )
-            if len(results) >= self._settings.jira_attachment_max_images:
+            if len(results) >= self._settings.jira.attachment_max_images:
                 break
         return results
 

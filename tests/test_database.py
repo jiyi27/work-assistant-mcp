@@ -9,6 +9,7 @@ from uuid import UUID
 
 from work_mcp.config import (
     DatabaseSettings,
+    LoggingSettings,
     ServerSettings,
     Settings,
 )
@@ -55,19 +56,10 @@ _DEFAULT_MYSQL_DATABASE = DatabaseSettings(
 def _make_settings(**overrides: object) -> Settings:
     defaults = dict(
         server=_DEFAULT_SERVER,
-        dingtalk_webhook_url="https://example.invalid/webhook",
-        dingtalk_secret=None,
-        jira_base_url="https://jira.example.invalid",
-        jira_api_token="jira-token",
-        jira_project_key="IOS",
-        log_dir=Path("logs"),
-        log_level="info",
+        logging=LoggingSettings(dir=Path("logs"), level="info"),
         enabled_plugins=("database",),
-        jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
-        jira_start_target_status="已接收",
-        jira_resolve_target_status="已解决",
-        jira_attachment_max_images=5,
-        jira_attachment_max_bytes=1_048_576,
+        dingtalk=None,
+        jira=None,
         log_search=None,
         database=_DEFAULT_DATABASE,
     )

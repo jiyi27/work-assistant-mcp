@@ -244,7 +244,8 @@ class RemoteFsService:
             ),
         }
 
-    def _walk_tree(self, current: Path, entries: list[dict[str, Any]]) -> None:
+    @staticmethod
+    def _walk_tree(current: Path, entries: list[dict[str, Any]]) -> None:
         try:
             children = sorted(current.iterdir(), key=lambda p: p.name)
         except PermissionError:
@@ -343,9 +344,9 @@ class RemoteFsService:
             "hint": HINT_SEARCH_TRUNCATED if truncated else HINT_SEARCH_COMPLETE,
         }
 
+    @staticmethod
     async def _search_in_root(
-        self,
-        root: Path,
+            root: Path,
         normalized_query: str,
         path_glob: str,
         pattern: re.Pattern[str] | None,

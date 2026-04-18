@@ -39,6 +39,9 @@ def _build_signed_webhook_url(webhook_url: str, secret: str | None) -> str:
 
 
 def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
+    if settings.dingtalk is None:
+        raise RuntimeError("DingTalk plugin enabled without dingtalk settings.")
+
     @mcp.tool()
     def dingtalk_send_markdown(title: str, markdown: str) -> dict[str, Any]:
         """Send a formatted notification to the DingTalk group.
@@ -63,7 +66,7 @@ def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
                 "hint": required_param_hint("markdown"),
             }
 
-        configure_logger(log_dir=settings.log_dir, level=settings.log_level)
+        configure_logger(log_dir=settings.logging.dir, level=settings.logging.level)
         payload = {
             "msgtype": "markdown",
             "markdown": {
@@ -72,8 +75,8 @@ def register_dingtalk_tools(mcp: FastMCP, settings: Settings) -> None:
             },
         }
         webhook_url = _build_signed_webhook_url(
-            settings.dingtalk_webhook_url,
-            settings.dingtalk_secret,
+            settings.dingtalk.webhook_url,
+            settings.dingtalk.secret,
         )
 
         try:

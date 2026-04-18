@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from work_mcp import logger
-from work_mcp.config import ServerSettings, Settings
+from work_mcp.config import JiraSettings, LoggingSettings, ServerSettings, Settings
 from work_mcp.server import create_mcp
 from work_mcp.tools.jira.client import JiraApiError
 from work_mcp.tools.jira.strings import (
@@ -20,19 +20,19 @@ _DEFAULT_SERVER = ServerSettings(transport="stdio", host=None, port=None)
 def _make_settings(**overrides: object) -> Settings:
     defaults = dict(
         server=_DEFAULT_SERVER,
-        dingtalk_webhook_url="https://example.invalid/webhook",
-        dingtalk_secret=None,
-        jira_base_url="https://jira.example.invalid",
-        jira_api_token="jira-token",
-        jira_project_key="IOS",
-        log_dir=Path("logs"),
-        log_level="info",
+        logging=LoggingSettings(dir=Path("logs"), level="info"),
         enabled_plugins=("jira",),
-        jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
-        jira_start_target_status="已接收",
-        jira_resolve_target_status="已解决",
-        jira_attachment_max_images=5,
-        jira_attachment_max_bytes=1024,
+        dingtalk=None,
+        jira=JiraSettings(
+            base_url="https://jira.example.invalid",
+            api_token="jira-token",
+            project_key="IOS",
+            latest_assigned_statuses=("待处理", "已接收", "处理中"),
+            start_target_status="已接收",
+            resolve_target_status="已解决",
+            attachment_max_images=5,
+            attachment_max_bytes=1024,
+        ),
         log_search=None,
     )
     defaults.update(overrides)
@@ -191,7 +191,18 @@ def test_jira_get_issue_details_omits_image_hint_without_image_attachments() -> 
 
 
 def test_jira_list_open_assigned_issues_uses_configured_status_list_in_jql() -> None:
-    service_settings = _make_settings(jira_project_key="IOS", jira_latest_assigned_statuses=("待处理", "已接收"))
+    service_settings = _make_settings(
+        jira=JiraSettings(
+            base_url="https://jira.example.invalid",
+            api_token="jira-token",
+            project_key="IOS",
+            latest_assigned_statuses=("待处理", "已接收"),
+            start_target_status="已接收",
+            resolve_target_status="已解决",
+            attachment_max_images=5,
+            attachment_max_bytes=1024,
+        )
+    )
     mcp = create_mcp(service_settings)
     with patch(
         "work_mcp.tools.jira.client.JiraClient.search_issues",
@@ -302,7 +313,7 @@ def test_jira_get_issue_details_rejects_issue_outside_configured_project() -> No
             "attachment": [],
         },
     }
-    mcp = create_mcp(_make_settings(jira_project_key="IOS"))
+    mcp = create_mcp(_make_settings())
     with patch("work_mcp.tools.jira.client.JiraClient.get_issue", return_value=issue_payload):
         _, structured = asyncio.run(
             mcp.call_tool(JIRA_GET_ISSUE_DETAILS_TOOL_NAME, {"issue_key": "ANDROID-123"})
@@ -498,7 +509,7 @@ def test_jira_start_issue_rejects_write_outside_configured_project() -> None:
             "updated": "2026-04-02T10:00:00.000+0800",
         },
     }
-    mcp = create_mcp(_make_settings(jira_project_key="IOS"))
+    mcp = create_mcp(_make_settings())
     with patch(
         "work_mcp.tools.jira.client.JiraClient.get_issue",
         return_value=issue_payload,

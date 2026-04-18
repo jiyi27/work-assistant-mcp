@@ -6,6 +6,7 @@ from pathlib import Path
 
 from work_mcp.config import (
     LogSearchSettings,
+    LoggingSettings,
     ServerSettings,
     Settings,
 )
@@ -18,19 +19,10 @@ _DEFAULT_SERVER = ServerSettings(transport="stdio", host=None, port=None)
 def _make_settings(tmp_path: Path, **overrides: object) -> Settings:
     defaults = dict(
         server=_DEFAULT_SERVER,
-        dingtalk_webhook_url="https://example.invalid/webhook",
-        dingtalk_secret=None,
-        jira_base_url="https://jira.example.invalid",
-        jira_api_token="jira-token",
-        jira_project_key="IOS",
-        log_dir=tmp_path / "logs",
-        log_level="info",
+        logging=LoggingSettings(dir=tmp_path / "logs", level="info"),
         enabled_plugins=("log_search",),
-        jira_latest_assigned_statuses=("待处理", "已接收", "处理中"),
-        jira_start_target_status="已接收",
-        jira_resolve_target_status="已解决",
-        jira_attachment_max_images=5,
-        jira_attachment_max_bytes=1024,
+        dingtalk=None,
+        jira=None,
         log_search=LogSearchSettings(
             log_base_dir=str(tmp_path / "services"),
         ),

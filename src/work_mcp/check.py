@@ -64,9 +64,10 @@ def _run_plugin_check(settings: Settings, plugin_name: str) -> ModuleCheckResult
 
 
 def _check_jira(settings: Settings) -> ModuleCheckResult:
+    assert settings.jira is not None
     config_lines = _config_block(
-        f"base_url={settings.jira_base_url}",
-        f"project_key={settings.jira_project_key}",
+        f"base_url={settings.jira.base_url}",
+        f"project_key={settings.jira.project_key}",
     )
     try:
         check_jira_connectivity(settings, timeout_seconds=5)
@@ -137,11 +138,12 @@ def _check_log_search(settings: Settings) -> ModuleCheckResult:
 
 
 def _check_dingtalk(settings: Settings) -> ModuleCheckResult:
+    assert settings.dingtalk is not None
     return ModuleCheckResult(
         module="dingtalk",
         lines=(
             CheckLine("ok", "config is valid"),
-            CheckLine("info", f"webhook_url={settings.dingtalk_webhook_url}"),
+            CheckLine("info", f"webhook_url={settings.dingtalk.webhook_url}"),
         ),
     )
 

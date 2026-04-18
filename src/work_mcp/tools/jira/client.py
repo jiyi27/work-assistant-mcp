@@ -21,8 +21,10 @@ class JiraApiError(RuntimeError):
 class JiraClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._base_url = self._require(settings.jira_base_url, "JIRA_BASE_URL")
-        self._api_token = self._require(settings.jira_api_token, "JIRA_API_TOKEN")
+        if settings.jira is None:
+            raise RuntimeError("Jira plugin enabled without jira settings.")
+        self._base_url = self._require(settings.jira.base_url, "JIRA_BASE_URL")
+        self._api_token = self._require(settings.jira.api_token, "JIRA_API_TOKEN")
         self._current_user_identifiers: frozenset[str] | None = None
 
     @staticmethod
