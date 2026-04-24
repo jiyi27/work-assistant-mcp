@@ -84,13 +84,11 @@ and wastes tokens. Do not use this tool for bulk data retrieval.
 
 
 def query_truncated_hint(db_type: str) -> str:
-    engine_label = database_engine_label(db_type)
-    syntax_label = _database_syntax_label(db_type)
     return (
-        f"The result was truncated to keep a single response to at most {QUERY_MAX_LIMIT} rows and "
-        "protect agent context. If you need a smaller or more specific result, refine the SQL with "
-        f"WHERE clauses and a stable ORDER BY clause. The current database engine is {engine_label}; "
-        f"use {syntax_label} limiting or pagination syntax if needed."
+        f"The result was truncated to the first {QUERY_MAX_LIMIT} rows by this tool. "
+        f"Increasing LIMIT above {QUERY_MAX_LIMIT} will not return more rows in one call. "
+        "Use the returned rows as a sample, or narrow the query with WHERE, GROUP BY, or COUNT. "
+        "Only paginate with OFFSET when the user explicitly needs the complete result set."
     )
 
 

@@ -104,7 +104,7 @@ class FakeDatabaseClient(AbstractDatabaseClient):
         return QueryResult(
             columns=["id", "status"],
             rows=rows[:QUERY_MAX_LIMIT],
-            row_count=len(rows[:QUERY_MAX_LIMIT]),
+            returned_row_count=len(rows[:QUERY_MAX_LIMIT]),
             truncated=len(rows) > QUERY_MAX_LIMIT,
         )
 
@@ -124,7 +124,7 @@ class FakeDatabaseClientWithLargeResult(AbstractDatabaseClient):
         return QueryResult(
             columns=["id", "status"],
             rows=rows[:QUERY_MAX_LIMIT],
-            row_count=QUERY_MAX_LIMIT,
+            returned_row_count=QUERY_MAX_LIMIT,
             truncated=True,
         )
 
@@ -270,7 +270,8 @@ def test_database_service_returns_successful_query_result() -> None:
         "database": "app_db",
         "columns": ["id", "status"],
         "rows": [[1, "pending"], [2, "done"], [3, "failed"]],
-        "row_count": 3,
+        "returned_row_count": 3,
+        "max_returned_rows": QUERY_MAX_LIMIT,
         "truncated": False,
         "hint": "All rows were returned. Proceed with the data.",
     }
@@ -287,9 +288,10 @@ def test_database_service_returns_truncated_query_hint() -> None:
         "database": "app_db",
         "columns": ["id", "status"],
         "rows": [[item, f"status-{item}"] for item in range(QUERY_MAX_LIMIT)],
-        "row_count": QUERY_MAX_LIMIT,
+        "returned_row_count": QUERY_MAX_LIMIT,
+        "max_returned_rows": QUERY_MAX_LIMIT,
         "truncated": True,
-        "hint": f"The result was truncated to keep a single response to at most {QUERY_MAX_LIMIT} rows and protect agent context. If you need a smaller or more specific result, refine the SQL with WHERE clauses and a stable ORDER BY clause. The current database engine is SQL Server; use SQL Server-compatible limiting or pagination syntax if needed.",
+        "hint": f"The result was truncated to the first {QUERY_MAX_LIMIT} rows by this tool. Increasing LIMIT above {QUERY_MAX_LIMIT} will not return more rows in one call. Use the returned rows as a sample, or narrow the query with WHERE, GROUP BY, or COUNT. Only paginate with OFFSET when the user explicitly needs the complete result set.",
     }
 
 
@@ -714,7 +716,7 @@ def test_sqlserver_client_caps_rows_at_query_max_limit(monkeypatch) -> None:
     result = client.execute_query("app_db", "SELECT * FROM orders ORDER BY name")
 
     assert result.rows == [[str(index)] for index in range(QUERY_MAX_LIMIT)]
-    assert result.row_count == QUERY_MAX_LIMIT
+    assert result.returned_row_count == QUERY_MAX_LIMIT
     assert result.truncated is True
 
 
@@ -737,5 +739,5 @@ def test_mysql_client_caps_rows_at_query_max_limit(monkeypatch) -> None:
     result = client.execute_query("app_db", "SELECT * FROM orders ORDER BY name")
 
     assert result.rows == [[str(index)] for index in range(QUERY_MAX_LIMIT)]
-    assert result.row_count == QUERY_MAX_LIMIT
+    assert result.returned_row_count == QUERY_MAX_LIMIT
     assert result.truncated is True

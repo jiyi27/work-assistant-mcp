@@ -18,6 +18,7 @@ from .strings import (
     HINT_DATABASES_FOUND,
     HINT_NO_DATABASES,
     HINT_TABLE_NOT_FOUND,
+    QUERY_MAX_LIMIT,
     query_complete_hint,
     query_empty_hint,
     query_error_hint,
@@ -159,13 +160,14 @@ class DatabaseService:
             "database": database_name,
             "columns": result.columns,
             "rows": result.rows,
-            "row_count": result.row_count,
+            "returned_row_count": result.returned_row_count,
+            "max_returned_rows": QUERY_MAX_LIMIT,
             "truncated": result.truncated,
             "hint": (
                 query_truncated_hint(self._settings.database.db_type)
                 if result.truncated
                 else query_empty_hint()
-                if result.row_count == 0
+                if result.returned_row_count == 0
                 else query_complete_hint()
             ),
         }

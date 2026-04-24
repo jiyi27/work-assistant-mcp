@@ -9,7 +9,7 @@ from typing import Any
 class QueryResult:
     columns: list[str]
     rows: list[list[Any]]
-    row_count: int
+    returned_row_count: int
     truncated: bool
 
 

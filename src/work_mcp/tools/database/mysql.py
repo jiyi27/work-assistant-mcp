@@ -221,7 +221,7 @@ class MySqlClient(AbstractDatabaseClient):
             return QueryResult(
                 columns=columns,
                 rows=materialized_rows,
-                row_count=len(materialized_rows),
+                returned_row_count=len(materialized_rows),
                 truncated=truncated,
             )
 
